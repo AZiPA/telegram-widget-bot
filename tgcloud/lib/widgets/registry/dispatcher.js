@@ -16,11 +16,15 @@ import { getWidgetDefinition } from './catalog.js';
  * @returns {Promise<*>} The resulting state or null
  */
 export async function resolveAndDispatchWidgetQuery(widgetQuery, { isSharedCopy = false } = {}) {
-  let answerPayload = null;
+  if (!widgetQuery?.id) {
+    return null;
+  }
+
+  let answerPayload = undefined;
   let result = null;
 
   try {
-    if (!widgetQuery || !widgetQuery.data) {
+    if (!widgetQuery.data) {
       return null;
     }
 
@@ -32,10 +36,12 @@ export async function resolveAndDispatchWidgetQuery(widgetQuery, { isSharedCopy 
       sharedWidget = await getSharedWidgetById(widgetQuery.widget_id);
     }
 
+    const chat = widgetQuery.chat ?? widgetQuery.message?.chat ?? null;
+    const messageId = widgetQuery.message_id ?? widgetQuery.message?.message_id ?? null;
+    const inlineMessageId = widgetQuery.inline_message_id ?? null;
+
     if (!isSharedCopy) {
-      const chatId = widgetQuery.chat?.id;
-      const messageId = widgetQuery.message_id;
-      const inlineMessageId = widgetQuery.inline_message_id;
+      const chatId = chat?.id;
       if (inlineMessageId || (chatId != null && messageId != null)) {
         instance = await getWidgetInstanceByMessage({ chatId, messageId, inlineMessageId });
       }
@@ -49,10 +55,16 @@ export async function resolveAndDispatchWidgetQuery(widgetQuery, { isSharedCopy 
       return null;
     }
 
+    const normalizedQuery = {
+      ...widgetQuery,
+      chat,
+      message_id: messageId,
+    };
+
     if (isSharedCopy) {
       if (typeof def.onSharedWidgetQuery === 'function') {
         result = await def.onSharedWidgetQuery({
-          query: widgetQuery,
+          query: normalizedQuery,
           action: parsed.action,
           payload: parsed.payload,
           sharedWidget,
@@ -61,7 +73,7 @@ export async function resolveAndDispatchWidgetQuery(widgetQuery, { isSharedCopy 
     } else {
       if (typeof def.onWidgetQuery === 'function') {
         result = await def.onWidgetQuery({
-          query: widgetQuery,
+          query: normalizedQuery,
           action: parsed.action,
           payload: parsed.payload,
           instance,
@@ -71,16 +83,14 @@ export async function resolveAndDispatchWidgetQuery(widgetQuery, { isSharedCopy 
     }
 
     if (result !== undefined && result !== null) {
-      answerPayload = typeof result === 'object' ? JSON.stringify(result) : String(result);
+      answerPayload = typeof result === 'string' ? result : JSON.stringify(result);
     }
 
     return result;
   } catch (err) {
-    console.error('[dispatcher] Dispatch error:', err);
-    throw err;
+    console.error('[WidgetDispatcher Error]', err);
+    return null;
   } finally {
-    if (widgetQuery?.id) {
-      await safeAnswerWidgetQuery(widgetQuery.id, answerPayload);
-    }
+    await safeAnswerWidgetQuery(widgetQuery.id, answerPayload);
   }
 }

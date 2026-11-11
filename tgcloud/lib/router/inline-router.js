@@ -1,5 +1,6 @@
 import { api } from 'sdk';
 import {
+  getSharedWidgetById,
   listRecentSharedWidgets,
   serializeStateData,
 } from '../widgets/index.js';
@@ -9,7 +10,24 @@ import {
 } from '../widgets/registry/index.js';
 
 /**
- * Handles inline query updates by providing articles for recent shared widgets
+ * Strips undefined or null values from an object.
+ * Prevents passing null/undefined chat_data or public_data to Bot API.
+ *
+ * @param {object} fields
+ * @returns {object}
+ */
+export function buildCleanWidgetContent(fields) {
+  const clean = {};
+  for (const [key, value] of Object.entries(fields)) {
+    if (value !== undefined && value !== null) {
+      clean[key] = value;
+    }
+  }
+  return clean;
+}
+
+/**
+ * Handles inline query updates by providing articles for requested/recent shared widgets
  * and registered widget templates.
  *
  * @param {object} inlineQuery - Telegram InlineQuery object
@@ -20,37 +38,40 @@ export async function routeInlineQueryUpdate(inlineQuery) {
     return null;
   }
 
-  // Fetch up to 10 recent shared widgets
-  const recentShared = await listRecentSharedWidgets({ limit: 10 });
-  const sharedResults = [];
+  const q = (inlineQuery?.query || '').trim();
+  const results = [];
+  let matchedRow = null;
 
-  for (const row of recentShared) {
-    const def = getWidgetDefinition(row.type);
-    if (!def) continue;
-
-    const caption = typeof def.defaultCaption === 'function'
-      ? def.defaultCaption(row.publicData ?? {})
-      : (def.defaultCaption ?? '');
-
-    sharedResults.push({
-      type: 'article',
-      id: `shared_${row.widgetId}`,
-      title: `${def.title || row.type} (${row.widgetId})`,
-      description: def.description || `Shared ${row.type} widget`,
-      input_message_content: {
-        widget_id: row.widgetId,
-        caption,
-      },
-    });
+  // 1. If q matches an existing widgetId, prioritize it as the first article
+  if (q) {
+    matchedRow = await getSharedWidgetById(q);
+    if (matchedRow) {
+      const def = getWidgetDefinition(matchedRow.type);
+      results.push({
+        type: 'article',
+        id: `shared_${matchedRow.widgetId}`,
+        title: `📤 Send Shared ${def?.title || matchedRow.type} (#${String(matchedRow.widgetId).slice(-6)})`,
+        description: 'Tap to post this synchronized live widget here',
+        input_message_content: buildCleanWidgetContent({
+          widget_id: String(matchedRow.widgetId),
+          caption: def ? def.defaultCaption(matchedRow.publicData ?? {}, matchedRow.widgetId) : `Shared Widget #${matchedRow.widgetId}`,
+          parse_mode: 'HTML',
+        }),
+        reply_markup: {
+          inline_keyboard: [[{ text: '📤 Share Widget', switch_inline_query: String(matchedRow.widgetId) }]],
+        },
+      });
+    }
   }
 
-  // Map registered definitions to template articles
-  const defs = listWidgetDefinitions();
-  const defResults = defs.map((def) => {
-    const caption = typeof def.defaultCaption === 'function'
-      ? def.defaultCaption({})
-      : (def.defaultCaption ?? '');
+  // 2. Always Include "Create New" Articles (timer widget first)
+  const defs = listWidgetDefinitions().slice().sort((a, b) => {
+    if (a.type === 'timer') return -1;
+    if (b.type === 'timer') return 1;
+    return 0;
+  });
 
+  for (const def of defs) {
     const pubData = def.createInitialPublicData
       ? def.createInitialPublicData({}, { revision: 1 })
       : undefined;
@@ -58,39 +79,64 @@ export async function routeInlineQueryUpdate(inlineQuery) {
       ? def.createInitialChatData({}, { revision: 1 })
       : undefined;
 
-    const inputMessageContent = {
+    const rawContent = {
       html: typeof def.renderHtml === 'function' ? def.renderHtml({}) : '',
       width: def.width ?? 0,
       height: def.height ?? 0,
-      caption,
+      caption: typeof def.defaultCaption === 'function' ? def.defaultCaption({}) : (def.defaultCaption || ''),
       allow_queries: Boolean(def.allowQueries),
       is_shared: Boolean(def.isShared),
     };
 
-    const pubSerialized = serializeStateData(pubData);
-    if (pubSerialized !== undefined) {
-      inputMessageContent.public_data = pubSerialized;
+    if (pubData !== null && pubData !== undefined) {
+      const s = serializeStateData(pubData);
+      if (s !== undefined && s !== null) rawContent.public_data = s;
+    }
+    if (chatData !== null && chatData !== undefined) {
+      const s = serializeStateData(chatData);
+      if (s !== undefined && s !== null) rawContent.chat_data = s;
     }
 
-    const chatSerialized = serializeStateData(chatData);
-    if (chatSerialized !== undefined) {
-      inputMessageContent.chat_data = chatSerialized;
-    }
-
-    return {
+    results.push({
       type: 'article',
-      id: `def_${def.type}`,
-      title: def.title || def.type,
-      description: def.description || `Create a new ${def.type} widget`,
-      input_message_content: inputMessageContent,
-    };
-  });
+      id: `new_${def.type}`,
+      title: def.type === 'timer' ? '⏱️ Create New Stopwatch' : `➕ New ${def.title}`,
+      description: def.description,
+      input_message_content: buildCleanWidgetContent(rawContent),
+    });
+  }
 
-  const results = [...sharedResults, ...defResults];
+  // 3. Append Recent Active Shared Widgets
+  const recentRows = await listRecentSharedWidgets({ limit: 10 });
+  for (const row of recentRows) {
+    if (matchedRow && String(row.widgetId) === String(matchedRow.widgetId)) {
+      continue;
+    }
+    const def = getWidgetDefinition(row.type);
+    const caption = def
+      ? (typeof def.defaultCaption === 'function' ? def.defaultCaption(row.publicData ?? {}, row.widgetId) : def.defaultCaption)
+      : `Shared Widget #${row.widgetId}`;
+
+    results.push({
+      type: 'article',
+      id: `shared_${row.widgetId}`,
+      title: `📤 Send Shared ${def?.title || row.type} (#${String(row.widgetId).slice(-6)})`,
+      description: 'Tap to post this synchronized live widget here',
+      input_message_content: buildCleanWidgetContent({
+        widget_id: String(row.widgetId),
+        caption,
+        parse_mode: 'HTML',
+      }),
+      reply_markup: {
+        inline_keyboard: [[{ text: '📤 Share Widget', switch_inline_query: String(row.widgetId) }]],
+      },
+    });
+  }
 
   return await api.answerInlineQuery({
     inline_query_id: inlineQuery.id,
-    results,
-    cache_time: 5,
+    results: results.slice(0, 20),
+    cache_time: 1,
+    is_personal: true,
   });
 }

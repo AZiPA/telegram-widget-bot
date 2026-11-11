@@ -1,5 +1,12 @@
 import { api, BotApiError } from 'sdk';
-import { resolveAndDispatchWidgetQuery } from '../widgets/registry/index.js';
+import {
+  getSharedWidgetById,
+  sendSharedWidgetMessage,
+} from '../widgets/index.js';
+import {
+  getWidgetDefinition,
+  resolveAndDispatchWidgetQuery,
+} from '../widgets/registry/index.js';
 
 /**
  * Handles callback queries and widget query bridges.
@@ -15,6 +22,31 @@ export async function routeCallbackQueryUpdate(callbackQuery, ctx) {
 
   if (ctx?.update?.shared_widget_query) {
     return await resolveAndDispatchWidgetQuery(ctx.update.shared_widget_query, { isSharedCopy: true });
+  }
+
+  if (callbackQuery?.data?.startsWith('share:')) {
+    const widgetId = callbackQuery.data.slice(6);
+    const row = await getSharedWidgetById(widgetId);
+    const chatId = callbackQuery.message?.chat?.id;
+    if (row && chatId) {
+      const def = getWidgetDefinition(row.type);
+      if (def) {
+        await sendSharedWidgetMessage(def, {
+          chatId,
+          widgetId: row.widgetId,
+          params: row.publicData ?? {},
+        });
+      }
+    }
+    try {
+      await api.answerCallbackQuery({
+        callback_query_id: callbackQuery.id,
+        text: 'Widget posted!',
+      });
+    } catch (err) {
+      console.warn(`[callback-router] Failed to answer share callback ${callbackQuery.id}:`, err?.description || err.message);
+    }
+    return { handled: true, widgetId };
   }
 
   if (callbackQuery?.data?.startsWith('wg:')) {

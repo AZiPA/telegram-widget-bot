@@ -1,12 +1,13 @@
 import { BotApiError } from 'sdk';
 import {
+  upsertSharedWidget,
   getSharedWidgetById,
   updateSharedWidgetRecord,
   updateSharedWidgetState,
   getWidgetInstanceByMessage,
   updateWidgetInstanceRecord,
   updateMessageWidgetState,
-} from '../../../index.js';
+} from '../../index.js';
 import { applyTimerAction, createInitialPublicData } from './state.js';
 
 /**
@@ -19,13 +20,23 @@ import { applyTimerAction, createInitialPublicData } from './state.js';
  * @returns {Promise<object>} Updated publicData state
  */
 export async function handleTimerMutation({ query, action, instance } = {}) {
-  const widgetId = query?.widget_id ?? instance?.widgetId ?? null;
+  const widgetId = query?.widget_id ? String(query.widget_id) : (instance?.widgetId ? String(instance.widgetId) : null);
 
   // Shared Widget Path
   if (widgetId) {
     const row = await getSharedWidgetById(widgetId);
 
-    let currentState = row?.publicData ?? instance?.publicData ?? createInitialPublicData();
+    let rawState = row?.publicData ?? instance?.publicData;
+    if (!rawState && query?.message?.widget?.public_data) {
+      try {
+        rawState = typeof query.message.widget.public_data === 'string'
+          ? JSON.parse(query.message.widget.public_data)
+          : query.message.widget.public_data;
+      } catch {
+        rawState = null;
+      }
+    }
+    let currentState = rawState ?? createInitialPublicData();
     if (typeof currentState === 'string') {
       try {
         currentState = JSON.parse(currentState);
@@ -34,7 +45,7 @@ export async function handleTimerMutation({ query, action, instance } = {}) {
       }
     }
 
-    const nextRevision = (row?.revision ?? currentState?.r ?? 1) + 1;
+    const nextRevision = Math.max(Number(row?.revision || 1), Number(currentState?.r || 1)) + 1;
     const { changed, publicData } = applyTimerAction(currentState, action, Date.now(), nextRevision);
 
     if (changed) {
@@ -43,6 +54,16 @@ export async function handleTimerMutation({ query, action, instance } = {}) {
           publicData,
           revision: nextRevision,
           cacheTime: 10,
+        });
+      } else {
+        await upsertSharedWidget({
+          widgetId,
+          type: 'timer',
+          publicData,
+          revision: nextRevision,
+          cacheTime: 10,
+          allowQueries: true,
+          createdBy: query?.from?.id ?? null,
         });
       }
 
@@ -60,9 +81,9 @@ export async function handleTimerMutation({ query, action, instance } = {}) {
   }
 
   // Fallback Instance Path (if widgetId is absent)
-  const chatId = query?.chat?.id;
-  const messageId = query?.message_id;
-  const inlineMessageId = query?.inline_message_id;
+  const chatId = query?.chat?.id ?? query?.message?.chat?.id ?? null;
+  const messageId = query?.message_id ?? query?.message?.message_id ?? null;
+  const inlineMessageId = query?.inline_message_id ?? null;
   const inst = instance ?? (await getWidgetInstanceByMessage({ chatId, messageId, inlineMessageId }));
 
   let currentState = inst?.publicData ?? createInitialPublicData();
@@ -74,7 +95,7 @@ export async function handleTimerMutation({ query, action, instance } = {}) {
     }
   }
 
-  const nextRevision = (inst?.revision ?? currentState?.r ?? 1) + 1;
+  const nextRevision = Math.max(Number(inst?.revision || 1), Number(currentState?.r || 1)) + 1;
   const { changed, publicData } = applyTimerAction(currentState, action, Date.now(), nextRevision);
 
   if (changed) {
@@ -89,17 +110,19 @@ export async function handleTimerMutation({ query, action, instance } = {}) {
     const targetMessageId = messageId ?? inst?.messageId;
     const targetInlineMessageId = inlineMessageId ?? inst?.inlineMessageId;
 
-    try {
-      await updateMessageWidgetState({
-        chatId: targetChatId,
-        messageId: targetMessageId,
-        inlineMessageId: targetInlineMessageId,
-        publicData,
-      });
-    } catch (err) {
-      const isBotApi = err instanceof BotApiError || err?.name === 'BotApiError' || err?.code !== undefined;
-      if (!(isBotApi && (err.code === 429 || err.code === 400))) {
-        throw err;
+    if ((targetChatId && targetMessageId) || targetInlineMessageId) {
+      try {
+        await updateMessageWidgetState({
+          chatId: targetChatId,
+          messageId: targetMessageId,
+          inlineMessageId: targetInlineMessageId,
+          publicData,
+        });
+      } catch (err) {
+        const isBotApi = err instanceof BotApiError || err?.name === 'BotApiError' || err?.code !== undefined;
+        if (!(isBotApi && (err.code === 429 || err.code === 400))) {
+          throw err;
+        }
       }
     }
   }

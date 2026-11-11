@@ -53,9 +53,11 @@ export function parsePollParams(rawText = '') {
  * @param {object} [params={}]
  * @returns {string}
  */
-export function defaultCaption(params = {}) {
+export function defaultCaption(params = {}, widgetId = null) {
   const question = params?.q || (typeof params === 'string' ? parsePollParams(params).q : DEFAULT_QUESTION);
-  return '📊 Poll: ' + (question || DEFAULT_QUESTION);
+  const base = '📊 Poll: ' + (question || DEFAULT_QUESTION);
+  if (!widgetId) return base;
+  return `${base}\n\n🔗 Widget ID: <code>${widgetId}</code>\nShare with: <code>/share ${widgetId}</code>`;
 }
 
 /**

@@ -10,6 +10,7 @@ import {
   listWidgetDefinitions,
   resolveAndDispatchWidgetQuery,
 } from '../widgets/registry/index.js';
+import { handleShareCommand } from '../commands/share.js';
 
 /**
  * Routes message updates and parses bot commands or widget queries.
@@ -66,40 +67,9 @@ export async function routeMessageUpdate(message, ctx) {
     return { handled: true, command };
   }
 
-  // /share <widget_id>: send shared widget copy
-  if (command === '/share') {
-    const widgetId = argText ? argText.trim().split(/\s+/)[0] : '';
-    if (!widgetId) {
-      await api.sendMessage({
-        chat_id: message.chat.id,
-        text: 'Usage: /share <widget_id>',
-      });
-      return { handled: true, command: '/share', error: 'MISSING_WIDGET_ID' };
-    }
-
-    const row = await getSharedWidgetById(widgetId);
-    if (!row) {
-      await api.sendMessage({
-        chat_id: message.chat.id,
-        text: `Shared widget "${widgetId}" not found.`,
-      });
-      return { handled: true, command: '/share', error: 'NOT_FOUND' };
-    }
-
-    const def = getWidgetDefinition(row.type);
-    if (!def) {
-      await api.sendMessage({
-        chat_id: message.chat.id,
-        text: `Widget definition for "${row.type}" not found.`,
-      });
-      return { handled: true, command: '/share', error: 'UNKNOWN_TYPE' };
-    }
-
-    await sendSharedWidgetMessage(def, {
-      chatId: message.chat.id,
-      widgetId: row.widgetId,
-    });
-    return { handled: true, command: '/share', widgetId: row.widgetId, type: def.type };
+  // /share or /share_<widgetId>: send shared widget copy or interactive picker
+  if (command === '/share' || command.startsWith('/share_')) {
+    return await handleShareCommand(message, argText);
   }
 
   // Registered widget command (/poll, /duel, etc.)

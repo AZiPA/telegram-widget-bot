@@ -30,14 +30,14 @@ export async function sendWidgetMessage(def, {
     publicDataObj.r = revision;
   }
 
-  const resolvedCaption = caption ?? (typeof def.defaultCaption === 'function' ? def.defaultCaption(params) : def.defaultCaption);
+  const initialCaption = caption ?? (typeof def.defaultCaption === 'function' ? def.defaultCaption(params) : (def.defaultCaption || ''));
 
   const sendParams = {
     chat_id: chatId,
     html,
     width: def.width ?? 0,
     height: def.height ?? 0,
-    caption: resolvedCaption,
+    caption: initialCaption,
     ...(showCaptionAboveMedia !== undefined ? { show_caption_above_media: showCaptionAboveMedia } : {}),
     allow_queries: Boolean(def.allowQueries),
     is_shared: Boolean(def.isShared),
@@ -47,7 +47,7 @@ export async function sendWidgetMessage(def, {
   };
 
   const message = await api.sendWidget(sendParams);
-  const widgetId = message?.widget?.id ?? null;
+  const widgetId = message?.widget?.id ? String(message.widget.id) : null;
 
   if (def.isShared && widgetId) {
     await upsertSharedWidget({
@@ -59,6 +59,23 @@ export async function sendWidgetMessage(def, {
       allowQueries: Boolean(def.allowQueries),
       createdBy,
     });
+
+    const sharedCaption = caption ?? (typeof def.defaultCaption === 'function' ? def.defaultCaption(params, widgetId) : (def.defaultCaption || ''));
+    const shareMarkup = replyMarkup ?? {
+      inline_keyboard: [[{ text: '📤 Share Widget', switch_inline_query: widgetId }]],
+    };
+
+    try {
+      await api.editMessageCaption({
+        chat_id: message.chat.id,
+        message_id: message.message_id,
+        caption: sharedCaption,
+        parse_mode: 'HTML',
+        reply_markup: shareMarkup,
+      });
+    } catch (e) {
+      console.warn('[sender] editMessageCaption skipped:', e?.description ?? e);
+    }
   }
 
   const instance = await insertWidgetInstance({
@@ -96,15 +113,19 @@ export async function sendSharedWidgetMessage(def, {
     chatDataObj.r = revision;
   }
 
-  const resolvedCaption = caption ?? (typeof def.defaultCaption === 'function' ? def.defaultCaption(params) : def.defaultCaption);
+  const resolvedCaption = caption ?? (typeof def.defaultCaption === 'function' ? def.defaultCaption(params, widgetId) : def.defaultCaption);
+  const resolvedMarkup = replyMarkup ?? {
+    inline_keyboard: [[{ text: '📤 Share Widget', switch_inline_query: String(widgetId) }]],
+  };
 
   const sendParams = {
     chat_id: chatId,
     widget_id: widgetId,
     ...(chatDataObj !== null && chatDataObj !== undefined ? { chat_data: serializeStateData(chatDataObj) } : {}),
     caption: resolvedCaption,
+    parse_mode: 'HTML',
     ...(showCaptionAboveMedia !== undefined ? { show_caption_above_media: showCaptionAboveMedia } : {}),
-    ...(replyMarkup ? { reply_markup: replyMarkup } : {}),
+    reply_markup: resolvedMarkup,
   };
 
   const message = await api.sendSharedWidget(sendParams);
@@ -113,7 +134,7 @@ export async function sendSharedWidgetMessage(def, {
     type: def.type,
     chatId: message.chat?.id ?? chatId,
     messageId: message.message_id,
-    widgetId,
+    widgetId: String(widgetId),
     isShared: true,
     allowQueries: Boolean(def.allowQueries),
     chatData: chatDataObj,
@@ -121,5 +142,5 @@ export async function sendSharedWidgetMessage(def, {
     revision,
   });
 
-  return { message, widgetId, instance };
+  return { message, widgetId: String(widgetId), instance };
 }

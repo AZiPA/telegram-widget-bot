@@ -111,6 +111,7 @@ d0.onclick = function() { setPage(0); };
 d1.onclick = function() { setPage(1); };
 
 vp.onpointerdown = function(e) {
+  if (e.isPrimary === false || (e.button !== undefined && e.button !== 0)) return;
   sx = e.clientX;
   sy = e.clientY;
   drag = true;
