@@ -54,7 +54,7 @@ export async function routeMessageUpdate(message, ctx) {
       '',
       'Available commands:',
       '/start or /help - Show this help message',
-      '/share <widget_id> - Share an existing widget by its ID',
+      '/share - Share an existing widget to any chat',
       '',
       'Widgets:',
       widgetLines,

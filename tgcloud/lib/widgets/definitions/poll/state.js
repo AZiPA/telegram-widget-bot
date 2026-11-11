@@ -50,14 +50,12 @@ export function parsePollParams(rawText = '') {
 /**
  * Generates the default message caption for a poll widget.
  *
- * @param {object} [params={}]
+ * @param {object|string} [params={}]
  * @returns {string}
  */
-export function defaultCaption(params = {}, widgetId = null) {
-  const question = params?.q || (typeof params === 'string' ? parsePollParams(params).q : DEFAULT_QUESTION);
-  const base = '📊 Poll: ' + (question || DEFAULT_QUESTION);
-  if (!widgetId) return base;
-  return `${base}\n\n🔗 Widget ID: <code>${widgetId}</code>\nShare with: <code>/share ${widgetId}</code>`;
+export function defaultCaption(params = {}) {
+  const q = typeof params === 'string' ? parsePollParams(params).q : params?.q;
+  return '📊 ' + (q || 'Live Shared Poll');
 }
 
 /**

@@ -27,16 +27,9 @@ export function parseTimerParams(rawText = '') {
  * @param {object|string} [params={}]
  * @returns {string}
  */
-export function defaultCaption(params = {}, widgetId = null) {
-  let title = 'Shared Stopwatch';
-  if (typeof params === 'string') {
-    title = parseTimerParams(params).title;
-  } else if (params && typeof params.title === 'string' && params.title.trim()) {
-    title = params.title.trim().slice(0, 40);
-  }
-  const base = '⏱️ ' + (title || 'Shared Stopwatch');
-  if (!widgetId) return base;
-  return `${base}\n\n🔗 Widget ID: <code>${widgetId}</code>\nShare with: <code>/share ${widgetId}</code>`;
+export function defaultCaption(params = {}) {
+  const title = typeof params === 'string' ? parseTimerParams(params).title : params?.title;
+  return '⏱️ ' + (title || 'Shared Stopwatch');
 }
 
 /**

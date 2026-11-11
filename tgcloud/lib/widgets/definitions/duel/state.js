@@ -35,16 +35,10 @@ export function parseDuelParams(rawText = '') {
  * @returns {string}
  */
 export function defaultCaption(params = {}) {
-  let target = 5;
-  if (typeof params === 'number') {
-    target = params;
-  } else if (typeof params === 'string') {
-    target = parseDuelParams(params).target;
-  } else if (params && typeof params.target === 'number') {
-    target = params.target;
-  }
-  target = Math.min(15, Math.max(3, target || 5));
-  return '⚔️ Tap Duel (First to ' + target + ')';
+  const target = typeof params === 'number'
+    ? params
+    : (typeof params === 'string' ? parseDuelParams(params).target : params?.target);
+  return '⚔️ Tap Duel (First to ' + (target || 5) + ')';
 }
 
 /**

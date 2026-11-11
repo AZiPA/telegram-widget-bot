@@ -91,47 +91,41 @@ export function serializeQueryResult(resultData) {
 }
 
 /**
- * Parses compact query wire format: <type>:<action>:<payload> or <action>:<payload>.
- * If only one colon is present (e.g. "vote:2"), returns { type: null, action: part0, payload: part1, raw: rawData }.
+ * Parses compact query wire format: <type>:<action>:<payload> or <type>:<action>.
+ * If only one colon is present (e.g. "timer:start"), returns { type: part0, action: part1, payload: null, raw: rawData }.
  * Validates that rawData is a non-empty string without NUL and 1 <= utf8ByteLength <= 64.
  * @param {string} rawData
- * @returns {{ type: string|null, action: string, payload: string|null, raw: string }}
+ * @returns {{ type: string|null, action: string|null, payload: string|null, raw: string }}
  */
 export function parseQueryData(rawData) {
-  if (typeof rawData !== 'string' || rawData.length === 0) {
-    throw new Error('WIDGET_QUERY_DATA_INVALID: Query data must be a non-empty string');
+  if (typeof rawData !== 'string' || rawData.length === 0 || rawData.includes('\0')) {
+    throw new Error('WIDGET_QUERY_DATA_INVALID: Query data must be a non-empty string without NUL bytes');
   }
-  if (rawData.includes('\0')) {
-    throw new Error('WIDGET_QUERY_DATA_INVALID: Query data contains NUL character (U+0000)');
-  }
-  const byteLength = utf8ByteLength(rawData);
-  if (byteLength < 1 || byteLength > 64) {
-    throw new Error(`WIDGET_QUERY_DATA_INVALID: Query data byte length (${byteLength}) must be between 1 and 64 bytes`);
+  const byteLen = utf8ByteLength(rawData);
+  if (byteLen < 1 || byteLen > 64) {
+    throw new Error(`WIDGET_QUERY_DATA_INVALID: Query byte length (${byteLen}) must be between 1 and 64`);
   }
 
   const firstColon = rawData.indexOf(':');
   if (firstColon === -1) {
+    return { type: null, action: rawData, payload: null, raw: rawData };
+  }
+
+  const secondColon = rawData.indexOf(':', firstColon + 1);
+  if (secondColon === -1) {
+    // Format: "<type>:<action>" (e.g. "timer:start", "timer:stop", "timer:lap")
     return {
-      type: null,
-      action: rawData,
+      type: rawData.slice(0, firstColon) || null,
+      action: rawData.slice(firstColon + 1) || null,
       payload: null,
       raw: rawData,
     };
   }
 
-  const secondColon = rawData.indexOf(':', firstColon + 1);
-  if (secondColon === -1) {
-    return {
-      type: null,
-      action: rawData.slice(0, firstColon),
-      payload: rawData.slice(firstColon + 1),
-      raw: rawData,
-    };
-  }
-
+  // Format: "<type>:<action>:<payload>" (e.g. "poll:vote:0", "timer:start:1")
   return {
-    type: rawData.slice(0, firstColon),
-    action: rawData.slice(firstColon + 1, secondColon),
+    type: rawData.slice(0, firstColon) || null,
+    action: rawData.slice(firstColon + 1, secondColon) || null,
     payload: rawData.slice(secondColon + 1),
     raw: rawData,
   };

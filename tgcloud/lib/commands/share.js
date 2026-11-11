@@ -35,8 +35,7 @@ export async function handleShareCommand(message, argText = '') {
     if (!row) {
       await api.sendMessage({
         chat_id: message.chat.id,
-        text: `Shared widget "<code>${widgetId}</code>" not found. Verify the Widget ID and try again.`,
-        parse_mode: 'HTML',
+        text: 'Shared widget not found. Verify your selection and try again.',
       });
       return { handled: true, command: '/share', error: 'NOT_FOUND' };
     }
@@ -45,7 +44,7 @@ export async function handleShareCommand(message, argText = '') {
     if (!def) {
       await api.sendMessage({
         chat_id: message.chat.id,
-        text: `Widget definition for "${row.type}" not found.`,
+        text: 'Widget definition not found.',
       });
       return { handled: true, command: '/share', error: 'UNKNOWN_TYPE' };
     }
@@ -70,18 +69,22 @@ export async function handleShareCommand(message, argText = '') {
   }
 
   const lines = recent
-    .map((row, idx) => `${idx + 1}. <b>${row.type}</b> (<code>${row.widgetId}</code>)`)
+    .map((row, idx) => {
+      const def = getWidgetDefinition(row.type);
+      const title = def ? def.defaultCaption(row.publicData ?? {}) : row.type;
+      return `${idx + 1}. ${title}`;
+    })
     .join('\n');
   const text = `<b>Select a Shared Widget to Post or Share:</b>\n\n${lines}`;
 
   const keyboard = recent.map((row) => [
     {
-      text: '📨 Post #' + String(row.widgetId).slice(-6) + ' (' + row.type + ')',
+      text: '📨 Post Here',
       callback_data: 'share:' + String(row.widgetId),
     },
     {
       text: '📤 Share to Chat',
-      switch_inline_query: String(row.widgetId),
+      switch_inline_query: '',
     },
   ]);
 

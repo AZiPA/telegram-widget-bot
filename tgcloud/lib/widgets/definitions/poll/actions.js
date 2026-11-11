@@ -1,3 +1,4 @@
+import { BotApiError } from 'sdk';
 import {
   getSharedWidgetById,
   updateSharedWidgetRecord,
@@ -22,7 +23,12 @@ export async function applyPollVote({ widgetId, payload }) {
     return null;
   }
 
-  const row = await getSharedWidgetById(widgetId);
+  let row = null;
+  try {
+    row = await getSharedWidgetById(widgetId);
+  } catch (err) {
+    console.warn('[PollActions] getSharedWidgetById warning:', err);
+  }
   if (!row) {
     return null;
   }
@@ -59,17 +65,28 @@ export async function applyPollVote({ widgetId, payload }) {
   const nextRevision = (row.revision ?? 1) + 1;
   publicData.r = nextRevision;
 
-  await updateSharedWidgetRecord(widgetId, {
-    publicData,
-    revision: nextRevision,
-    cacheTime: 15,
-  });
+  try {
+    await updateSharedWidgetRecord(widgetId, {
+      publicData,
+      revision: nextRevision,
+      cacheTime: 15,
+    });
+  } catch (dbErr) {
+    console.warn('[PollActions] updateSharedWidgetRecord warning:', dbErr);
+  }
 
-  await updateSharedWidgetState({
-    widgetId,
-    publicData,
-    cacheTime: 15,
-  });
+  try {
+    await updateSharedWidgetState({
+      widgetId,
+      publicData,
+      cacheTime: 15,
+    });
+  } catch (err) {
+    const isBotApi = err instanceof BotApiError || err?.name === 'BotApiError' || err?.code !== undefined;
+    if (!(isBotApi && (err.code === 429 || err.code === 400))) {
+      console.warn('[PollActions] updateSharedWidgetState warning:', err);
+    }
+  }
 
   return publicData;
 }
@@ -84,7 +101,7 @@ export async function applyPollVote({ widgetId, payload }) {
  * @returns {Promise<object|null>}
  */
 export async function onWidgetQuery({ query, payload, instance }) {
-  const widgetId = query?.widget_id ?? instance?.widgetId;
+  const widgetId = query?.widget_id ?? query?.message?.widget?.id ?? instance?.widgetId ?? null;
   return await applyPollVote({ widgetId, payload });
 }
 
@@ -97,6 +114,6 @@ export async function onWidgetQuery({ query, payload, instance }) {
  * @returns {Promise<object|null>}
  */
 export async function onSharedWidgetQuery({ query, payload }) {
-  const widgetId = query?.widget_id;
+  const widgetId = query?.widget_id ?? query?.message?.widget?.id ?? null;
   return await applyPollVote({ widgetId, payload });
 }
