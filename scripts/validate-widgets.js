@@ -22,7 +22,6 @@ for (const name of widgetDirs) {
   const templatePath = join(baseDir, name, 'template.js');
   if (!existsSync(templatePath)) continue;
 
-  // ایمپورت مستقیم فایل تمپلیت؛ بدون فراخوانی actions.js یا sdk
   const { renderHtml } = await import(`file://${templatePath}`);
   if (typeof renderHtml !== 'function') {
     throw new Error(`${name}: renderHtml is not exported`);
