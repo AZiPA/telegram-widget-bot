@@ -15,14 +15,21 @@ jobs:
   deploy:
     name: Validate, Push & Migrate on Telegram Serverless
     runs-on: ubuntu-latest
-    env:
-      TGCLOUD_TOKEN: ${{ secrets.TGCLOUD_TOKEN }}
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
 
-      - name: Setup Node.js 26
+      - name: Verify TGCLOUD Secret
+        env:
+          TGCLOUD_TOKEN: ${{ secrets.TGCLOUD_TOKEN }}
+        run: |
+          if [ -z "$TGCLOUD_TOKEN" ]; then
+            echo "::error::Missing repository secret TGCLOUD_TOKEN"
+            exit 1
+          fi
+
+      - name: Setup Node.js
         uses: actions/setup-node@v7
         with:
           node-version: '26'
@@ -31,32 +38,24 @@ jobs:
         run: npm install --no-audit --no-fund
 
       - name: Validate Widget HTML Profile 1 Size Budgets (<= 32KB raw, <= 3800B zlib-9)
-        run: |
-          node --input-type=module -e "
-          import zlib from 'node:zlib';
-          import { listWidgetDefinitions } from './tgcloud/lib/widgets/registry/index.js';
-          const defs = listWidgetDefinitions();
-          if (!defs.length) throw new Error('No widget definitions registered');
-          for (const def of defs) {
-            const html = def.renderHtml({});
-            if (typeof html !== 'string' || !html.length) throw new Error(def.type + ': empty HTML');
-            if (html.includes('\0')) throw new Error(def.type + ': HTML contains forbidden NUL byte');
-            const rawBytes = Buffer.byteLength(html, 'utf8');
-            const compressedBytes = zlib.deflateSync(Buffer.from(html, 'utf8'), { level: 9 }).byteLength;
-            console.log('[Widget Size]', def.type, 'raw=' + rawBytes + 'B', 'zlib9=' + compressedBytes + 'B');
-            if (rawBytes > 32768) throw new Error(def.type + ' exceeds 32768B raw limit: ' + rawBytes);
-            if (compressedBytes > 3800) throw new Error(def.type + ' exceeds 3800B safe zlib-9 limit: ' + compressedBytes);
-          }
-          "
+        run: node scripts/validate-widgets.js
 
       - name: Check Telegram Serverless Status
+        env:
+          TGCLOUD_TOKEN: ${{ secrets.TGCLOUD_TOKEN }}
         run: npx tgcloud status
 
       - name: Push Modules to Telegram Serverless
+        env:
+          TGCLOUD_TOKEN: ${{ secrets.TGCLOUD_TOKEN }}
         run: npx tgcloud push
 
       - name: Apply Safe Database Schema Migrations
+        env:
+          TGCLOUD_TOKEN: ${{ secrets.TGCLOUD_TOKEN }}
         run: npx tgcloud migrate --safe
 
       - name: Synchronize Bot Webhook with Deployed Handlers
+        env:
+          TGCLOUD_TOKEN: ${{ secrets.TGCLOUD_TOKEN }}
         run: npx tgcloud webhook sync
