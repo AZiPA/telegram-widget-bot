@@ -12,21 +12,21 @@ if (!defs.length) {
 for (const def of defs) {
   const html = def.renderHtml({});
   if (typeof html !== 'string' || !html.length) {
-    throw new Error(${def.type}: empty HTML);
+    throw new Error(`${def.type}: empty HTML`);
   }
   if (html.includes('\0')) {
-    throw new Error(${def.type}: HTML contains forbidden NUL byte);
+    throw new Error(`${def.type}: HTML contains forbidden NUL byte`);
   }
 
   const rawBytes = Buffer.byteLength(html, 'utf8');
   const compressedBytes = zlib.deflateSync(Buffer.from(html, 'utf8'), { level: 9 }).byteLength;
 
-  console.log([Widget Size] ${def.type} -> raw: ${rawBytes}B, zlib-9: ${compressedBytes}B);
+  console.log(`[Widget Size] ${def.type} -> raw: ${rawBytes}B, zlib-9: ${compressedBytes}B`);
 
   if (rawBytes > RAW_LIMIT) {
-    throw new Error(${def.type} exceeds raw limit: ${rawBytes}B > ${RAW_LIMIT}B);
+    throw new Error(`${def.type} exceeds raw limit: ${rawBytes}B > ${RAW_LIMIT}B`);
   }
   if (compressedBytes > ZLIB_LIMIT) {
-    throw new Error(${def.type} exceeds safe zlib-9 limit: ${compressedBytes}B > ${ZLIB_LIMIT}B);
+    throw new Error(`${def.type} exceeds safe zlib-9 limit: ${compressedBytes}B > ${ZLIB_LIMIT}B`);
   }
 }
