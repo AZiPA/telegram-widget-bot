@@ -48,7 +48,7 @@ jobs:
       - name: Push Modules to Telegram Serverless
         env:
           TGCLOUD_TOKEN: ${{ secrets.TGCLOUD_TOKEN }}
-        run: npx tgcloud push
+        run: npx tgcloud push --force
 
       - name: Apply Safe Database Schema Migrations
         env:
