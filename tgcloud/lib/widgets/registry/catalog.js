@@ -1,5 +1,6 @@
 import pollWidget from '../definitions/poll/index.js';
 import duelWidget from '../definitions/duel/index.js';
+import timerWidget from '../definitions/timer/index.js';
 
 const byType = new Map();
 const byCommand = new Map();
@@ -20,6 +21,7 @@ function register(def) {
 
 register(pollWidget);
 register(duelWidget);
+register(timerWidget);
 
 /**
  * Retrieves a widget definition by its type name ('poll', 'duel', etc.).
@@ -50,5 +52,5 @@ export function getWidgetByCommand(command) {
  * @returns {Array<object>}
  */
 export function listWidgetDefinitions() {
-  return [pollWidget, duelWidget];
+  return [pollWidget, duelWidget, timerWidget];
 }
