@@ -51,6 +51,41 @@ export async function getSharedWidgetById(widgetId) {
 }
 
 /**
+ * Retrieves the most recently updated shared widget by type.
+ * @param {string} type
+ * @returns {Promise<object|null>}
+ */
+export async function getLatestSharedWidgetByType(type) {
+  return await db.select()
+    .from(sharedWidgets)
+    .where(eq(sharedWidgets.type, type))
+    .orderBy(desc(sharedWidgets.updatedAt))
+    .limit(1)
+    .get();
+}
+
+/**
+ * Deletes shared widgets, optionally filtered by type.
+ * @param {string|null} [type=null]
+ * @returns {Promise<object>}
+ */
+export async function clearSharedWidgets(type = null) {
+  if (type) {
+    return await db.delete(sharedWidgets).where(eq(sharedWidgets.type, type)).run();
+  }
+  return await db.delete(sharedWidgets).run();
+}
+
+/**
+ * Alias for clearSharedWidgets(type).
+ * @param {string} type
+ * @returns {Promise<object>}
+ */
+export async function deleteSharedWidgetsByType(type) {
+  return await clearSharedWidgets(type);
+}
+
+/**
  * Lists recent shared widgets, optionally filtered by type.
  * @param {object} [options]
  * @returns {Promise<Array<object>>}

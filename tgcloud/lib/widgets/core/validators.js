@@ -1,132 +1,74 @@
-const textEncoder = new TextEncoder();
-
-/**
- * Returns the UTF-8 byte length of a string using TextEncoder.
- * @param {string} str
- * @returns {number}
- */
 export function utf8ByteLength(str) {
-  if (typeof str !== 'string') {
-    str = String(str ?? '');
-  }
-  return textEncoder.encode(str).byteLength;
+  return new TextEncoder().encode(String(str ?? '')).byteLength;
 }
 
-/**
- * Validates widget HTML: non-empty string, no NUL character (U+0000), <= 32768 UTF-8 bytes.
- * @param {string} html
- * @returns {boolean}
- */
 export function assertValidWidgetHtml(html) {
   if (typeof html !== 'string' || html.length === 0) {
-    throw new Error('INPUT_MEDIA_WIDGET_HTML_INVALID: HTML must be a non-empty string');
+    throw new Error('INPUT_MEDIA_WIDGET_HTML_INVALID: Widget HTML must be a non-empty string');
   }
   if (html.includes('\0')) {
-    throw new Error('INPUT_MEDIA_WIDGET_HTML_INVALID: HTML contains NUL character (U+0000)');
+    throw new Error('INPUT_MEDIA_WIDGET_HTML_INVALID: Widget HTML must not contain NUL bytes');
   }
-  const byteLength = utf8ByteLength(html);
-  if (byteLength > 32768) {
-    throw new Error(`INPUT_MEDIA_WIDGET_TOO_LARGE: HTML byte length (${byteLength}) exceeds 32768 bytes`);
+  const bytes = utf8ByteLength(html);
+  if (bytes > 32768) {
+    throw new Error(`INPUT_MEDIA_WIDGET_TOO_LARGE: HTML size (${bytes}B) exceeds 32768B limit`);
   }
-  return true;
 }
 
-/**
- * Serializes state data object (chat_data or public_data) to JSON.
- * Verifies no NUL character and byte length <= 1024 bytes.
- * Returns undefined for undefined (or null without allowClear).
- * Returns "" when clearing state (explicit null with allowClear, or empty string).
- * @param {*} dataObj
- * @param {boolean} [allowClear=false]
- * @returns {string|undefined}
- */
-export function serializeStateData(dataObj, allowClear = false) {
-  if (dataObj === undefined) {
-    return undefined;
+export function serializeStateData(dataObj) {
+  if (dataObj === undefined) return undefined;
+  if (dataObj === null || dataObj === '') return '';
+  const str = typeof dataObj === 'string' ? dataObj : JSON.stringify(dataObj);
+  if (str.includes('\0')) {
+    throw new Error('WIDGET_DATA_INVALID: State data must not contain NUL bytes');
   }
-  if (dataObj === null) {
-    return allowClear ? '' : undefined;
-  }
-  if (dataObj === '') {
-    return '';
-  }
-  const jsonStr = typeof dataObj === 'string' ? dataObj : JSON.stringify(dataObj);
-  if (jsonStr === undefined) {
-    return undefined;
-  }
-  if (jsonStr.includes('\0') || jsonStr.includes('\\u0000')) {
-    throw new Error('INPUT_MEDIA_WIDGET_DATA_INVALID: State data contains NUL character (U+0000)');
-  }
-  const byteLength = utf8ByteLength(jsonStr);
-  if (byteLength > 1024) {
-    throw new Error(`INPUT_MEDIA_WIDGET_DATA_TOO_LARGE: State data byte length (${byteLength}) exceeds 1024 bytes (WIDGET_DATA_TOO_LARGE)`);
-  }
-  return jsonStr;
-}
-
-/**
- * Serializes query result data to a string or JSON string.
- * Verifies no NUL character and byte length <= 1024 bytes.
- * @param {*} resultData
- * @returns {string|undefined}
- */
-export function serializeQueryResult(resultData) {
-  if (resultData === null || resultData === undefined) {
-    return undefined;
-  }
-  const str = typeof resultData === 'string'
-    ? resultData
-    : typeof resultData === 'object'
-      ? JSON.stringify(resultData)
-      : String(resultData);
-
-  if (str.includes('\0') || str.includes('\\u0000')) {
-    throw new Error('WIDGET_RESULT_INVALID: Query result contains NUL character (U+0000)');
-  }
-  const byteLength = utf8ByteLength(str);
-  if (byteLength > 1024) {
-    throw new Error(`WIDGET_RESULT_TOO_LARGE: Query result byte length (${byteLength}) exceeds 1024 bytes`);
+  const bytes = utf8ByteLength(str);
+  if (bytes > 1024) {
+    throw new Error(`WIDGET_DATA_TOO_LARGE: State size (${bytes}B) exceeds 1024B limit`);
   }
   return str;
 }
 
-/**
- * Parses compact query wire format: <type>:<action>:<payload> or <type>:<action>.
- * If only one colon is present (e.g. "timer:start"), returns { type: part0, action: part1, payload: null, raw: rawData }.
- * Validates that rawData is a non-empty string without NUL and 1 <= utf8ByteLength <= 64.
- * @param {string} rawData
- * @returns {{ type: string|null, action: string|null, payload: string|null, raw: string }}
- */
+export function serializeQueryResult(resultData) {
+  if (resultData === undefined || resultData === null || resultData === '') return undefined;
+  const str = typeof resultData === 'string' ? resultData : JSON.stringify(resultData);
+  if (!str || str.includes('\0')) return undefined;
+  const bytes = utf8ByteLength(str);
+  if (bytes > 1024) {
+    throw new Error(`WIDGET_RESULT_TOO_LARGE: Query result (${bytes}B) exceeds 1024B limit`);
+  }
+  return str;
+}
+
 export function parseQueryData(rawData) {
   if (typeof rawData !== 'string' || rawData.length === 0 || rawData.includes('\0')) {
-    throw new Error('WIDGET_QUERY_DATA_INVALID: Query data must be a non-empty string without NUL bytes');
+    return { type: null, action: null, payload: null, raw: '' };
   }
-  const byteLen = utf8ByteLength(rawData);
+  const trimmed = rawData.trim();
+  const byteLen = utf8ByteLength(trimmed);
   if (byteLen < 1 || byteLen > 64) {
-    throw new Error(`WIDGET_QUERY_DATA_INVALID: Query byte length (${byteLen}) must be between 1 and 64`);
+    return { type: null, action: null, payload: null, raw: trimmed };
   }
 
-  const firstColon = rawData.indexOf(':');
+  const firstColon = trimmed.indexOf(':');
   if (firstColon === -1) {
-    return { type: null, action: rawData, payload: null, raw: rawData };
+    return { type: null, action: trimmed, payload: null, raw: trimmed };
   }
 
-  const secondColon = rawData.indexOf(':', firstColon + 1);
+  const secondColon = trimmed.indexOf(':', firstColon + 1);
   if (secondColon === -1) {
-    // Format: "<type>:<action>" (e.g. "timer:start", "timer:stop", "timer:lap")
     return {
-      type: rawData.slice(0, firstColon) || null,
-      action: rawData.slice(firstColon + 1) || null,
+      type: trimmed.slice(0, firstColon) || null,
+      action: trimmed.slice(firstColon + 1) || null,
       payload: null,
-      raw: rawData,
+      raw: trimmed,
     };
   }
 
-  // Format: "<type>:<action>:<payload>" (e.g. "poll:vote:0", "timer:start:1")
   return {
-    type: rawData.slice(0, firstColon) || null,
-    action: rawData.slice(firstColon + 1, secondColon) || null,
-    payload: rawData.slice(secondColon + 1),
-    raw: rawData,
+    type: trimmed.slice(0, firstColon) || null,
+    action: trimmed.slice(firstColon + 1, secondColon) || null,
+    payload: trimmed.slice(secondColon + 1),
+    raw: trimmed,
   };
 }

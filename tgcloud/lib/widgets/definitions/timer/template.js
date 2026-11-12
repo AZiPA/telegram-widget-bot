@@ -79,6 +79,7 @@ let st = { s: 0, t0: 0, acc: 0, lc: 0, laps: [], r: 0 };
 let lastRev = 0;
 let skew = 0;
 let rafId = null;
+let busy = false;
 
 const vp = document.getElementById('vp');
 const trk = document.getElementById('trk');
@@ -299,40 +300,34 @@ function applyIncoming(data) {
   renderUI();
 }
 
-b1.onclick = function() {
-  if (!TW || TW.isPreview || b1.disabled) return;
-  const act = b1.dataset.act;
-  if (!act) return;
+function sendAction(act) {
+  if (!TW || TW.isPreview || busy || !act) return;
+  busy = true;
   setMsg('');
   TW.request('timer:' + act + ':1').then(
     function(res) {
+      busy = false;
       try {
-        const resData = typeof res?.result === 'string' ? JSON.parse(res.result) : res?.result;
+        const rawRes = res?.result;
+        const resData = typeof rawRes === 'string' ? JSON.parse(rawRes) : rawRes;
         if (resData) applyIncoming(resData);
       } catch (err) {}
     },
     function(e) {
+      busy = false;
       setMsg(e && e.code === 'NOT_ALLOWED' ? 'Open bot to control timer' : e && e.code === 'BUSY' ? 'Syncing...' : 'Error: ' + (e && e.code ? e.code : 'UNKNOWN'));
     }
   );
+}
+
+b1.onclick = function() {
+  if (b1.disabled) return;
+  sendAction(b1.dataset.act);
 };
 
 b2.onclick = function() {
-  if (!TW || TW.isPreview || b2.disabled) return;
-  const act = b2.dataset.act;
-  if (!act) return;
-  setMsg('');
-  TW.request('timer:' + act + ':1').then(
-    function(res) {
-      try {
-        const resData = typeof res?.result === 'string' ? JSON.parse(res.result) : res?.result;
-        if (resData) applyIncoming(resData);
-      } catch (err) {}
-    },
-    function(e) {
-      setMsg(e && e.code === 'NOT_ALLOWED' ? 'Open bot to control timer' : e && e.code === 'BUSY' ? 'Syncing...' : 'Error: ' + (e && e.code ? e.code : 'UNKNOWN'));
-    }
-  );
+  if (b2.disabled) return;
+  sendAction(b2.dataset.act);
 };
 
 try {

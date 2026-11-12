@@ -2,7 +2,8 @@ import { api } from 'sdk';
 import {
   sendWidgetMessage,
   sendSharedWidgetMessage,
-  getSharedWidgetById,
+  getLatestSharedWidgetByType,
+  clearSharedWidgets,
 } from '../widgets/index.js';
 import {
   getWidgetByCommand,
@@ -42,7 +43,30 @@ export async function routeMessageUpdate(message, ctx) {
   const [cmdPart] = firstToken.split('@');
   const command = cmdPart.toLowerCase();
 
-  // /start or /help: dynamic help message
+  // /start deep link or /start / /help
+  if (command === '/start' && argText) {
+    const timerDef = getWidgetDefinition('timer');
+    if (timerDef) {
+      const existingTimer = await getLatestSharedWidgetByType('timer');
+      if (existingTimer?.widgetId) {
+        try {
+          await sendSharedWidgetMessage(timerDef, {
+            chatId: message.chat.id,
+            widgetId: existingTimer.widgetId,
+            params: existingTimer.publicData ?? {},
+          });
+          return { handled: true, command: '/start', deepLink: argText };
+        } catch {}
+      }
+      await sendWidgetMessage(timerDef, {
+        chatId: message.chat.id,
+        params: {},
+        createdBy: message.from?.id ?? null,
+      });
+      return { handled: true, command: '/start', deepLink: argText };
+    }
+  }
+
   if (command === '/start' || command === '/help') {
     const defs = listWidgetDefinitions();
     const widgetLines = defs
@@ -67,9 +91,54 @@ export async function routeMessageUpdate(message, ctx) {
     return { handled: true, command };
   }
 
-  // /share or /share_<widgetId>: send shared widget copy or interactive picker
+  // /share or /share_<index>
   if (command === '/share' || command.startsWith('/share_')) {
     return await handleShareCommand(message, argText);
+  }
+
+  // /timer specific reuse handling
+  if (command === '/timer') {
+    const timerDef = getWidgetDefinition('timer');
+    if (timerDef) {
+      const parsedParams = typeof timerDef.parseParams === 'function'
+        ? timerDef.parseParams(argText)
+        : { title: argText };
+
+      if (parsedParams?.forceNew || argText.trim().toLowerCase() === 'new') {
+        try {
+          await clearSharedWidgets('timer');
+        } catch (err) {
+          console.warn('[CommandRouter] clearSharedWidgets warning:', err);
+        }
+        await sendWidgetMessage(timerDef, {
+          chatId: message.chat.id,
+          params: parsedParams,
+          createdBy: message.from?.id ?? null,
+        });
+        return { handled: true, type: 'timer', action: 'new' };
+      }
+
+      const existingTimer = await getLatestSharedWidgetByType('timer');
+      if (existingTimer?.widgetId) {
+        try {
+          await sendSharedWidgetMessage(timerDef, {
+            chatId: message.chat.id,
+            widgetId: existingTimer.widgetId,
+            params: parsedParams,
+          });
+          return { handled: true, type: 'timer', reused: true, widgetId: existingTimer.widgetId };
+        } catch (err) {
+          console.warn('[CommandRouter] Reusing shared timer failed, falling back to new:', err?.description ?? err);
+        }
+      }
+
+      await sendWidgetMessage(timerDef, {
+        chatId: message.chat.id,
+        params: parsedParams,
+        createdBy: message.from?.id ?? null,
+      });
+      return { handled: true, type: 'timer', reused: false };
+    }
   }
 
   // Registered widget command (/poll, /duel, etc.)

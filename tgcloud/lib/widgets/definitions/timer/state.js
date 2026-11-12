@@ -6,18 +6,23 @@
 export const MAX_LAPS = 10;
 
 /**
- * Parses parameters for the timer widget from raw text (e.g. "/timer Workout").
+ * Parses parameters for the timer widget from raw text (e.g. "/timer Workout" or "/timer new").
  * Clamps title to 40 characters (default: 'Shared Stopwatch').
  *
  * @param {string} [rawText='']
- * @returns {{ title: string }}
+ * @returns {{ title: string, forceNew?: boolean }}
  */
 export function parseTimerParams(rawText = '') {
   if (typeof rawText !== 'string') {
     rawText = String(rawText ?? '');
   }
+  const trimmed = rawText.trim();
+  if (trimmed.toLowerCase() === 'new') {
+    return { title: 'Shared Stopwatch', forceNew: true };
+  }
   return {
-    title: rawText.trim().slice(0, 40) || 'Shared Stopwatch',
+    title: trimmed.slice(0, 40) || 'Shared Stopwatch',
+    forceNew: false,
   };
 }
 
@@ -28,8 +33,12 @@ export function parseTimerParams(rawText = '') {
  * @returns {string}
  */
 export function defaultCaption(params = {}) {
-  const title = typeof params === 'string' ? parseTimerParams(params).title : params?.title;
-  return '⏱️ ' + (title || 'Shared Stopwatch');
+  const title = typeof params === 'string'
+    ? parseTimerParams(params).title
+    : (params?.title ? String(params.title).trim() : '');
+  return title && title !== 'Shared Stopwatch'
+    ? `⏱️ Shared Stopwatch — ${title}`
+    : '⏱️ Shared Stopwatch';
 }
 
 /**

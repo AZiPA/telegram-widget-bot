@@ -1,7 +1,10 @@
 import { api, BotApiError } from 'sdk';
 import {
   getSharedWidgetById,
+  listRecentSharedWidgets,
   sendSharedWidgetMessage,
+  sendWidgetMessage,
+  clearSharedWidgets,
 } from '../widgets/index.js';
 import {
   getWidgetDefinition,
@@ -24,8 +27,88 @@ export async function routeCallbackQueryUpdate(callbackQuery, ctx) {
     return await resolveAndDispatchWidgetQuery(ctx.update.shared_widget_query, { isSharedCopy: true });
   }
 
-  if (callbackQuery?.data?.startsWith('share:')) {
-    const widgetId = callbackQuery.data.slice(6);
+  const data = callbackQuery?.data || '';
+
+  if (data.startsWith('share_idx:')) {
+    const idx = Number.parseInt(data.slice(10), 10);
+    const recent = await listRecentSharedWidgets({ limit: 5 });
+    const row = recent?.[idx];
+    const chatId = callbackQuery.message?.chat?.id;
+    if (row && chatId) {
+      const def = getWidgetDefinition(row.type);
+      if (def) {
+        try {
+          await sendSharedWidgetMessage(def, {
+            chatId,
+            widgetId: row.widgetId,
+            params: row.publicData ?? {},
+          });
+        } catch (err) {
+          console.warn('[callback-router] sendSharedWidgetMessage warning:', err?.description ?? err);
+        }
+      }
+    }
+    try {
+      await api.answerCallbackQuery({
+        callback_query_id: callbackQuery.id,
+        text: 'Widget posted!',
+      });
+    } catch {}
+    return { handled: true, idx };
+  }
+
+  if (data.startsWith('share_new:')) {
+    const type = data.slice(10);
+    const def = getWidgetDefinition(type);
+    const chatId = callbackQuery.message?.chat?.id;
+    if (def && chatId) {
+      try {
+        await sendWidgetMessage(def, {
+          chatId,
+          createdBy: callbackQuery.from?.id ?? null,
+        });
+      } catch (err) {
+        console.warn('[callback-router] sendWidgetMessage warning:', err?.description ?? err);
+      }
+    }
+    try {
+      await api.answerCallbackQuery({
+        callback_query_id: callbackQuery.id,
+        text: 'New widget created!',
+      });
+    } catch {}
+    return { handled: true, type };
+  }
+
+  if (data === 'share_clear:all') {
+    try {
+      await clearSharedWidgets();
+    } catch (err) {
+      console.warn('[callback-router] clearSharedWidgets warning:', err);
+    }
+    if (callbackQuery.message?.chat?.id && callbackQuery.message?.message_id) {
+      try {
+        await api.editMessageText({
+          chat_id: callbackQuery.message.chat.id,
+          message_id: callbackQuery.message.message_id,
+          text: '✅ Saved widget list cleared. Send /timer or /poll to create a fresh widget.',
+        });
+      } catch (err) {
+        console.warn('[callback-router] editMessageText warning:', err?.description ?? err);
+      }
+    }
+    try {
+      await api.answerCallbackQuery({
+        callback_query_id: callbackQuery.id,
+        text: 'Saved list cleared!',
+      });
+    } catch {}
+    return { handled: true, cleared: true };
+  }
+
+  // Legacy share: callback fallback
+  if (data.startsWith('share:')) {
+    const widgetId = data.slice(6);
     const row = await getSharedWidgetById(widgetId);
     const chatId = callbackQuery.message?.chat?.id;
     if (row && chatId) {
@@ -49,7 +132,7 @@ export async function routeCallbackQueryUpdate(callbackQuery, ctx) {
     return { handled: true, widgetId };
   }
 
-  if (callbackQuery?.data?.startsWith('wg:')) {
+  if (data.startsWith('wg:')) {
     return await resolveAndDispatchWidgetQuery(
       {
         id: callbackQuery.id,
@@ -57,7 +140,7 @@ export async function routeCallbackQueryUpdate(callbackQuery, ctx) {
         chat: callbackQuery.message?.chat,
         message_id: callbackQuery.message?.message_id,
         inline_message_id: callbackQuery.inline_message_id,
-        data: callbackQuery.data.slice(3),
+        data: data.slice(3),
       },
       { isSharedCopy: false }
     );

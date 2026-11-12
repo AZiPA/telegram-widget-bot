@@ -1,7 +1,7 @@
-import { BotApiError } from 'sdk';
 import {
   upsertSharedWidget,
   getSharedWidgetById,
+  getLatestSharedWidgetByType,
   updateSharedWidgetRecord,
   updateSharedWidgetState,
   getWidgetInstanceByMessage,
@@ -10,56 +10,65 @@ import {
 } from '../../index.js';
 import { applyTimerAction, createInitialPublicData } from './state.js';
 
-/**
- * Handles timer mutations (start, stop, resume, lap, reset) for shared widgets and instances.
- *
- * @param {object} params
- * @param {object} params.query - Telegram widget_query or shared_widget_query
- * @param {string} params.action - 'start' | 'stop' | 'resume' | 'lap' | 'reset'
- * @param {object} [params.instance] - widget instance record if already resolved
- * @param {object} [params.sharedWidget] - shared widget record if already resolved
- * @returns {Promise<object>} Updated publicData state
- */
-export async function handleTimerMutation({ query, action, instance, sharedWidget } = {}) {
-  const rawWidgetId = query?.widget_id ?? query?.message?.widget?.id ?? instance?.widgetId ?? null;
-  const widgetId = rawWidgetId !== null && rawWidgetId !== undefined ? String(rawWidgetId) : null;
+function safeParseState(raw) {
+  if (!raw) return null;
+  if (typeof raw === 'object') return raw;
+  try {
+    return JSON.parse(String(raw));
+  } catch {
+    return null;
+  }
+}
 
-  // Shared Widget Path
-  if (widgetId) {
-    let row = sharedWidget;
-    if (!row) {
-      try {
-        row = await getSharedWidgetById(widgetId);
-      } catch (dbErr) {
-        console.warn('[TimerActions] getSharedWidgetById warning:', dbErr);
-      }
-    }
+async function handleTimerMutation({ query, action, instance, sharedWidget }) {
+  const nowMs = Date.now();
+  const chatId = query?.chat?.id ?? query?.message?.chat?.id ?? null;
+  const messageId = query?.message_id ?? query?.message?.message_id ?? null;
+  const inlineMessageId = query?.inline_message_id ?? null;
 
-    let rawState = row?.publicData ?? instance?.publicData;
-    if (!rawState && query?.message?.widget?.public_data) {
-      try {
-        rawState = typeof query.message.widget.public_data === 'string'
-          ? JSON.parse(query.message.widget.public_data)
-          : query.message.widget.public_data;
-      } catch {
-        rawState = null;
-      }
-    }
-    let currentState = rawState ?? createInitialPublicData();
-    if (typeof currentState === 'string') {
-      try {
-        currentState = JSON.parse(currentState);
-      } catch {
-        currentState = createInitialPublicData();
-      }
-    }
+  let inst = instance ?? null;
+  if (!inst && ((chatId && messageId) || inlineMessageId)) {
+    try {
+      inst = await getWidgetInstanceByMessage({ chatId, messageId, inlineMessageId });
+    } catch {}
+  }
 
-    const nextRevision = Math.max(Number(row?.revision || 1), Number(currentState?.r || 1)) + 1;
-    const { changed, publicData } = applyTimerAction(currentState, action, Date.now(), nextRevision);
+  const rawWid = query?.widget_id ?? query?.message?.widget?.id ?? inst?.widgetId ?? sharedWidget?.widgetId ?? null;
+  let widgetId = rawWid !== null && rawWid !== undefined ? String(rawWid) : null;
 
-    if (changed) {
+  let sharedRow = sharedWidget ?? null;
+  if (!sharedRow && widgetId) {
+    try {
+      sharedRow = await getSharedWidgetById(widgetId);
+    } catch {}
+  }
+  if (!sharedRow && !widgetId) {
+    try {
+      sharedRow = await getLatestSharedWidgetByType('timer');
+      if (sharedRow?.widgetId) widgetId = String(sharedRow.widgetId);
+    } catch {}
+  }
+
+  const msgState = safeParseState(query?.message?.widget?.public_data);
+  const currentState =
+    safeParseState(sharedRow?.publicData) ??
+    safeParseState(inst?.publicData) ??
+    msgState ??
+    createInitialPublicData({}, { revision: 1 });
+
+  const baseRev = Math.max(
+    Number(sharedRow?.revision || 0),
+    Number(inst?.revision || 0),
+    Number(currentState?.r || 1)
+  );
+  const nextRevision = baseRev + 1;
+
+  const { changed, publicData } = applyTimerAction(currentState, action, nowMs, nextRevision);
+
+  if (changed) {
+    if (widgetId) {
       try {
-        if (row) {
+        if (sharedRow) {
           await updateSharedWidgetRecord(widgetId, {
             publicData,
             revision: nextRevision,
@@ -77,76 +86,36 @@ export async function handleTimerMutation({ query, action, instance, sharedWidge
           });
         }
       } catch (dbErr) {
-        console.warn('[TimerActions] Database save warning:', dbErr);
+        console.warn('[TimerActions] DB update warning:', dbErr);
       }
 
       try {
         await updateSharedWidgetState({ widgetId, publicData, cacheTime: 10 });
-      } catch (err) {
-        const isBotApi = err instanceof BotApiError || err?.name === 'BotApiError' || err?.code !== undefined;
-        if (!(isBotApi && (err.code === 429 || err.code === 400))) {
-          console.warn('[TimerActions] updateSharedWidgetState warning:', err);
-        }
+      } catch (apiErr) {
+        console.warn('[TimerActions] editSharedWidgetData warning:', apiErr?.description ?? apiErr);
       }
     }
 
-    return publicData;
-  }
-
-  // Fallback Instance Path (if widgetId is absent)
-  const chatId = query?.chat?.id ?? query?.message?.chat?.id ?? null;
-  const messageId = query?.message_id ?? query?.message?.message_id ?? null;
-  const inlineMessageId = query?.inline_message_id ?? null;
-  let inst = instance;
-  if (!inst && ((chatId && messageId) || inlineMessageId)) {
-    try {
-      inst = await getWidgetInstanceByMessage({ chatId, messageId, inlineMessageId });
-    } catch (dbErr) {
-      console.warn('[TimerActions] getWidgetInstanceByMessage warning:', dbErr);
-    }
-  }
-
-  let currentState = inst?.publicData ?? createInitialPublicData();
-  if (typeof currentState === 'string') {
-    try {
-      currentState = JSON.parse(currentState);
-    } catch {
-      currentState = createInitialPublicData();
-    }
-  }
-
-  const nextRevision = Math.max(Number(inst?.revision || 1), Number(currentState?.r || 1)) + 1;
-  const { changed, publicData } = applyTimerAction(currentState, action, Date.now(), nextRevision);
-
-  if (changed) {
     if (inst?.id) {
       try {
         await updateWidgetInstanceRecord(inst.id, {
+          chatData: inst.chatData ?? null,
           publicData,
           revision: nextRevision,
         });
-      } catch (dbErr) {
-        console.warn('[TimerActions] updateWidgetInstanceRecord warning:', dbErr);
-      }
+      } catch {}
     }
 
-    const targetChatId = chatId ?? inst?.chatId;
-    const targetMessageId = messageId ?? inst?.messageId;
-    const targetInlineMessageId = inlineMessageId ?? inst?.inlineMessageId;
-
-    if ((targetChatId && targetMessageId) || targetInlineMessageId) {
+    if (!widgetId && ((chatId && messageId) || inlineMessageId)) {
       try {
         await updateMessageWidgetState({
-          chatId: targetChatId,
-          messageId: targetMessageId,
-          inlineMessageId: targetInlineMessageId,
+          chatId,
+          messageId,
+          inlineMessageId,
           publicData,
         });
-      } catch (err) {
-        const isBotApi = err instanceof BotApiError || err?.name === 'BotApiError' || err?.code !== undefined;
-        if (!(isBotApi && (err.code === 429 || err.code === 400))) {
-          console.warn('[TimerActions] updateMessageWidgetState warning:', err);
-        }
+      } catch (apiErr) {
+        console.warn('[TimerActions] editMessageWidgetData warning:', apiErr?.description ?? apiErr);
       }
     }
   }
@@ -154,22 +123,10 @@ export async function handleTimerMutation({ query, action, instance, sharedWidge
   return publicData;
 }
 
-/**
- * Handles incoming query from original widget message.
- *
- * @param {object} ctx
- * @returns {Promise<object>}
- */
 export async function onWidgetQuery(ctx) {
   return await handleTimerMutation(ctx);
 }
 
-/**
- * Handles incoming query from forwarded copy of shared widget.
- *
- * @param {object} ctx
- * @returns {Promise<object>}
- */
 export async function onSharedWidgetQuery(ctx) {
   return await handleTimerMutation(ctx);
 }
