@@ -24,10 +24,6 @@ export async function sendWidgetMessage(def, {
     : null;
   if (publicDataObj && typeof publicDataObj === 'object') publicDataObj.r = revision;
 
-  const defaultMarkup = def.isShared
-    ? { inline_keyboard: [[{ text: '📤 Share to Chat', switch_inline_query: '' }]] }
-    : undefined;
-
   const sendPayload = {
     chat_id: chatId,
     html,
@@ -47,9 +43,8 @@ export async function sendWidgetMessage(def, {
   if (publicDataObj !== null && publicDataObj !== undefined) {
     sendPayload.public_data = serializeStateData(publicDataObj);
   }
-  const finalMarkup = replyMarkup ?? defaultMarkup;
-  if (finalMarkup) {
-    sendPayload.reply_markup = finalMarkup;
+  if (replyMarkup) {
+    sendPayload.reply_markup = replyMarkup;
   }
 
   const message = await api.sendWidget(sendPayload);
@@ -97,15 +92,10 @@ export async function sendSharedWidgetMessage(def, {
     : null;
   if (chatDataObj && typeof chatDataObj === 'object') chatDataObj.r = revision;
 
-  const defaultMarkup = {
-    inline_keyboard: [[{ text: '📤 Share to Chat', switch_inline_query: '' }]],
-  };
-
   const sendPayload = {
     chat_id: chatId,
     widget_id: String(widgetId),
     caption: caption ?? (typeof def.defaultCaption === 'function' ? def.defaultCaption(params) : (def.defaultCaption || '')),
-    reply_markup: replyMarkup ?? defaultMarkup,
   };
 
   if (showCaptionAboveMedia !== undefined) {
@@ -113,6 +103,9 @@ export async function sendSharedWidgetMessage(def, {
   }
   if (chatDataObj !== null && chatDataObj !== undefined) {
     sendPayload.chat_data = serializeStateData(chatDataObj);
+  }
+  if (replyMarkup) {
+    sendPayload.reply_markup = replyMarkup;
   }
 
   const message = await api.sendSharedWidget(sendPayload);

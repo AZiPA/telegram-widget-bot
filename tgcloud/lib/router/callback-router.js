@@ -74,7 +74,7 @@ export async function routeCallbackQueryUpdate(callbackQuery, ctx) {
     try {
       await api.answerCallbackQuery({
         callback_query_id: callbackQuery.id,
-        text: 'New widget created!',
+        text: chatId ? 'New widget created!' : 'Open the bot in a private chat to launch widgets.',
       });
     } catch {}
     return { handled: true, type };

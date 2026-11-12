@@ -1,5 +1,5 @@
 /**
- * Pure state machine, compact schema, and lap bounding for the Live Shared Stopwatch widget.
+ * Pure state machine, compact schema, and lap bounding for the Stopwatch widget.
  * Zero SDK or DB dependencies.
  */
 
@@ -7,7 +7,7 @@ export const MAX_LAPS = 10;
 
 /**
  * Parses parameters for the timer widget from raw text (e.g. "/timer Workout" or "/timer new").
- * Clamps title to 40 characters (default: 'Shared Stopwatch').
+ * Clamps title to 40 characters.
  *
  * @param {string} [rawText='']
  * @returns {{ title: string, forceNew?: boolean }}
@@ -18,10 +18,10 @@ export function parseTimerParams(rawText = '') {
   }
   const trimmed = rawText.trim();
   if (trimmed.toLowerCase() === 'new') {
-    return { title: 'Shared Stopwatch', forceNew: true };
+    return { title: '', forceNew: true };
   }
   return {
-    title: trimmed.slice(0, 40) || 'Shared Stopwatch',
+    title: trimmed.slice(0, 40),
     forceNew: false,
   };
 }
@@ -36,9 +36,9 @@ export function defaultCaption(params = {}) {
   const title = typeof params === 'string'
     ? parseTimerParams(params).title
     : (params?.title ? String(params.title).trim() : '');
-  return title && title !== 'Shared Stopwatch'
-    ? `⏱️ Shared Stopwatch — ${title}`
-    : '⏱️ Shared Stopwatch';
+  return title && title !== 'Stopwatch' && title !== 'Shared Stopwatch'
+    ? `⏱️ Stopwatch — ${title}`
+    : '⏱️ Stopwatch';
 }
 
 /**

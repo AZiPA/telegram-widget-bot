@@ -1,14 +1,8 @@
 import { api } from 'sdk';
-import {
-  sendWidgetMessage,
-  sendSharedWidgetMessage,
-  getLatestSharedWidgetByType,
-  clearSharedWidgets,
-} from '../widgets/index.js';
+import { sendWidgetMessage } from '../widgets/index.js';
 import {
   getWidgetByCommand,
   getWidgetDefinition,
-  listWidgetDefinitions,
   resolveAndDispatchWidgetQuery,
 } from '../widgets/registry/index.js';
 import { handleShareCommand } from '../commands/share.js';
@@ -43,21 +37,10 @@ export async function routeMessageUpdate(message, ctx) {
   const [cmdPart] = firstToken.split('@');
   const command = cmdPart.toLowerCase();
 
-  // /start deep link or /start / /help
+  // /start deep link
   if (command === '/start' && argText) {
     const timerDef = getWidgetDefinition('timer');
     if (timerDef) {
-      const existingTimer = await getLatestSharedWidgetByType('timer');
-      if (existingTimer?.widgetId) {
-        try {
-          await sendSharedWidgetMessage(timerDef, {
-            chatId: message.chat.id,
-            widgetId: existingTimer.widgetId,
-            params: existingTimer.publicData ?? {},
-          });
-          return { handled: true, command: '/start', deepLink: argText };
-        } catch {}
-      }
       await sendWidgetMessage(timerDef, {
         chatId: message.chat.id,
         params: {},
@@ -68,20 +51,15 @@ export async function routeMessageUpdate(message, ctx) {
   }
 
   if (command === '/start' || command === '/help') {
-    const defs = listWidgetDefinitions();
-    const widgetLines = defs
-      .map((d) => `${d.command || d.type} - ${d.title}: ${d.description}`)
-      .join('\n');
-
     const text = [
-      'Telegram Serverless Widget Engine',
+      '⚡ Telegram Serverless Widget Engine',
       '',
       'Available commands:',
-      '/start or /help - Show this help message',
-      '/share - Share an existing widget to any chat',
-      '',
-      'Widgets:',
-      widgetLines,
+      '/timer - Stopwatch (Hybrid analog & digital chronograph with split laps)',
+      '/duel - Tap Duel (Real-time 2-player tapping battle)',
+      '/poll - Interactive Poll (Live multi-option voting with progress bars)',
+      '/share - Launch widgets menu',
+      '/help - Show this help message',
     ].join('\n');
 
     await api.sendMessage({
@@ -96,48 +74,19 @@ export async function routeMessageUpdate(message, ctx) {
     return await handleShareCommand(message, argText);
   }
 
-  // /timer specific reuse handling
+  // /timer always sends a fresh, responsive Stopwatch widget
   if (command === '/timer') {
     const timerDef = getWidgetDefinition('timer');
     if (timerDef) {
-      const parsedParams = typeof timerDef.parseParams === 'function'
+      const params = typeof timerDef.parseParams === 'function'
         ? timerDef.parseParams(argText)
         : { title: argText };
-
-      if (parsedParams?.forceNew || argText.trim().toLowerCase() === 'new') {
-        try {
-          await clearSharedWidgets('timer');
-        } catch (err) {
-          console.warn('[CommandRouter] clearSharedWidgets warning:', err);
-        }
-        await sendWidgetMessage(timerDef, {
-          chatId: message.chat.id,
-          params: parsedParams,
-          createdBy: message.from?.id ?? null,
-        });
-        return { handled: true, type: 'timer', action: 'new' };
-      }
-
-      const existingTimer = await getLatestSharedWidgetByType('timer');
-      if (existingTimer?.widgetId) {
-        try {
-          await sendSharedWidgetMessage(timerDef, {
-            chatId: message.chat.id,
-            widgetId: existingTimer.widgetId,
-            params: parsedParams,
-          });
-          return { handled: true, type: 'timer', reused: true, widgetId: existingTimer.widgetId };
-        } catch (err) {
-          console.warn('[CommandRouter] Reusing shared timer failed, falling back to new:', err?.description ?? err);
-        }
-      }
-
       await sendWidgetMessage(timerDef, {
         chatId: message.chat.id,
-        params: parsedParams,
+        params,
         createdBy: message.from?.id ?? null,
       });
-      return { handled: true, type: 'timer', reused: false };
+      return { handled: true, type: 'timer' };
     }
   }
 

@@ -11,10 +11,10 @@ export function renderHtml() {
 <head>
 <meta charset="utf-8">
 <style>
-body{margin:0;padding:10px 14px max(12px,env(safe-area-inset-bottom)) 20px;font-family:system-ui,-apple-system,sans-serif;color:var(--tg-theme-text-color,#000);background:var(--tg-theme-bg-color,transparent);box-sizing:border-box;user-select:none;-webkit-user-select:none}
-.dots{display:flex;justify-content:center;align-items:center;gap:6px;margin-bottom:8px}
-.dot{width:16px;height:4px;border-radius:2px;background:var(--tg-theme-section-separator-color,rgba(128,128,128,.3));cursor:pointer;transition:all .2s ease}
-.dot.active{width:24px;background:var(--tg-theme-button-color,#3390ec)}
+body{margin:0;padding:10px 14px max(12px,env(safe-area-inset-bottom)) 14px;font-family:system-ui,-apple-system,sans-serif;color:var(--tg-theme-text-color,#000);background:var(--tg-theme-bg-color,transparent);box-sizing:border-box;user-select:none;-webkit-user-select:none}
+.pills{display:flex;justify-content:center;align-items:center;gap:8px;margin-bottom:8px}
+.pill{padding:4px 14px;border-radius:14px;font-size:12px;font-weight:600;background:var(--tg-theme-secondary-bg-color,rgba(128,128,128,.15));color:var(--tg-theme-hint-color,#888);cursor:pointer;border:none;outline:none;transition:all .2s ease;font-family:inherit}
+.pill.active{background:var(--tg-theme-button-color,#3390ec);color:var(--tg-theme-button-text-color,#fff)}
 #vp{overflow:hidden;touch-action:pan-y;user-select:none;-webkit-user-select:none;width:100%}
 #trk{display:flex;width:200%;transition:transform .24s cubic-bezier(.22,1,.36,1)}
 .pg{width:50%;box-sizing:border-box;flex-shrink:0;padding:0 2px}
@@ -25,18 +25,17 @@ body{margin:0;padding:10px 14px max(12px,env(safe-area-inset-bottom)) 20px;font-
 .l-col-split{width:38%;text-align:center;color:var(--tg-theme-hint-color,#888)}
 .l-col-tot{width:37%;text-align:right;font-weight:500}
 .btns{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}
-button{border:none;border-radius:8px;padding:10px 0;font-size:15px;cursor:pointer;text-align:center;font-family:inherit;box-sizing:border-box}
+button.b-pri,button.b-red,button.b-sec{border:none;border-radius:8px;padding:10px 0;font-size:15px;cursor:pointer;text-align:center;font-family:inherit;box-sizing:border-box}
 button[disabled]{opacity:.4;cursor:not-allowed}
 .b-pri{background:var(--tg-theme-button-color,#3390ec);color:var(--tg-theme-button-text-color,#fff);font-weight:600}
 .b-red{background:var(--tg-theme-destructive-text-color,#e53935);color:#fff;font-weight:600}
 .b-sec{background:var(--tg-theme-secondary-bg-color,rgba(128,128,128,.15));color:var(--tg-theme-text-color,inherit);font-weight:600}
-#msg{font-size:11px;color:var(--tg-theme-hint-color,#888);text-align:center;min-height:14px;margin-top:4px;font-style:italic}
 </style>
 </head>
 <body>
-<div class="dots">
-  <div class="dot active" id="d0"></div>
-  <div class="dot" id="d1"></div>
+<div class="pills">
+  <button type="button" class="pill active" id="pAn">Analog</button>
+  <button type="button" class="pill" id="pDg">Digital</button>
 </div>
 <div id="vp">
   <div id="trk">
@@ -68,23 +67,58 @@ button[disabled]{opacity:.4;cursor:not-allowed}
   </div>
 </div>
 <div class="btns">
-  <button id="b1" class="b-pri">Start</button>
-  <button id="b2" class="b-sec" disabled>Lap</button>
+  <button type="button" id="b1" class="b-pri">Start</button>
+  <button type="button" id="b2" class="b-sec" disabled>Lap</button>
 </div>
-<div id="msg"></div>
 <script>
 const TW = window.TelegramWidget;
+const STORAGE_KEY = 'tw_sw_v1';
 
-let st = { s: 0, t0: 0, acc: 0, lc: 0, laps: [], r: 0 };
-let lastRev = 0;
-let skew = 0;
+function loadInitialState() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object') {
+        return {
+          s: Number(parsed.s) || 0,
+          t0: Number(parsed.t0) || 0,
+          acc: Number(parsed.acc) || 0,
+          lc: Number(parsed.lc) || 0,
+          laps: Array.isArray(parsed.laps) ? parsed.laps.slice(0, 10) : [],
+          r: Number(parsed.r) || 1,
+        };
+      }
+    }
+  } catch (e) {}
+
+  try {
+    const fallback = TW?.chatData || TW?.publicData;
+    if (fallback) {
+      const parsed = typeof fallback === 'string' ? JSON.parse(fallback) : fallback;
+      if (parsed && typeof parsed === 'object') {
+        return {
+          s: Number(parsed.s) || 0,
+          t0: Number(parsed.t0) || 0,
+          acc: Number(parsed.acc) || 0,
+          lc: Number(parsed.lc) || 0,
+          laps: Array.isArray(parsed.laps) ? parsed.laps.slice(0, 10) : [],
+          r: Number(parsed.r) || 1,
+        };
+      }
+    }
+  } catch (e) {}
+
+  return { s: 0, t0: 0, acc: 0, lc: 0, laps: [], r: 1 };
+}
+
+let st = loadInitialState();
 let rafId = null;
-let busy = false;
 
 const vp = document.getElementById('vp');
 const trk = document.getElementById('trk');
-const d0 = document.getElementById('d0');
-const d1 = document.getElementById('d1');
+const pAn = document.getElementById('pAn');
+const pDg = document.getElementById('pDg');
 
 const clkEl = document.getElementById('clk');
 const hbEl = document.getElementById('hb');
@@ -94,7 +128,6 @@ const l2El = document.getElementById('l2');
 
 const b1 = document.getElementById('b1');
 const b2 = document.getElementById('b2');
-const msgEl = document.getElementById('msg');
 
 let pg = 0;
 let sx = 0;
@@ -104,12 +137,12 @@ let drag = false;
 function setPage(p) {
   pg = p;
   trk.style.transform = p ? 'translateX(-50%)' : 'translateX(0)';
-  d0.className = 'dot' + (p === 0 ? ' active' : '');
-  d1.className = 'dot' + (p === 1 ? ' active' : '');
+  pAn.className = 'pill' + (p === 0 ? ' active' : '');
+  pDg.className = 'pill' + (p === 1 ? ' active' : '');
 }
 
-d0.onclick = function() { setPage(0); };
-d1.onclick = function() { setPage(1); };
+pAn.onclick = function() { setPage(0); };
+pDg.onclick = function() { setPage(1); };
 
 vp.onpointerdown = function(e) {
   if (e.isPrimary === false || (e.button !== undefined && e.button !== 0)) return;
@@ -142,6 +175,13 @@ function fmt(ms) {
   return h + ':' + m + ':' + s + '.' + d;
 }
 
+function getElapsed(now = Date.now()) {
+  if (st.s === 1) {
+    return st.acc + Math.max(0, now - st.t0);
+  }
+  return st.acc;
+}
+
 function paintClock(totalMs) {
   clkEl.textContent = fmt(totalMs);
 
@@ -161,9 +201,7 @@ function paintClock(totalMs) {
 
 function tick() {
   if (st.s === 1 && !document.hidden) {
-    const now = Date.now() + skew;
-    const elapsed = Math.max(st.acc, st.acc + (now - st.t0));
-    paintClock(elapsed);
+    paintClock(getElapsed());
     rafId = requestAnimationFrame(tick);
   } else {
     rafId = null;
@@ -181,10 +219,6 @@ function stopTick() {
     cancelAnimationFrame(rafId);
     rafId = null;
   }
-}
-
-function setMsg(text) {
-  if (msgEl) msgEl.textContent = text || '';
 }
 
 function renderLapTable(container, laps) {
@@ -222,6 +256,12 @@ function renderLapTable(container, laps) {
   }
 }
 
+function persist() {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(st));
+  } catch (e) {}
+}
+
 function renderUI() {
   if (st.s === 0) {
     stopTick();
@@ -247,9 +287,7 @@ function renderUI() {
     b2.disabled = false;
     b2.dataset.act = 'lap';
 
-    const now = Date.now() + skew;
-    const elapsed = Math.max(st.acc, st.acc + (now - st.t0));
-    paintClock(elapsed);
+    paintClock(getElapsed());
     startTick();
   } else if (st.s === 2) {
     stopTick();
@@ -270,82 +308,48 @@ function renderUI() {
   renderLapTable(l2El, st.laps || []);
 }
 
-function applyIncoming(data) {
-  if (typeof data === 'string') {
-    try {
-      data = JSON.parse(data);
-    } catch (e) {
-      return;
-    }
-  }
-  if (!data || typeof data !== 'object') return;
-  if (data.r !== undefined && data.r < lastRev) return;
+function act(type) {
+  try {
+    TW?.HapticFeedback?.impactOccurred?.('light');
+  } catch (e) {}
 
-  lastRev = data.r || lastRev;
-  st = {
-    s: Number(data.s) || 0,
-    t0: Number(data.t0) || 0,
-    acc: Number(data.acc) || 0,
-    lc: Number(data.lc) || 0,
-    laps: Array.isArray(data.laps) ? data.laps : [],
-    r: data.r ?? lastRev,
-  };
-
-  if (st.s === 1 && st.t0 > 0) {
-    if (Date.now() + skew < st.t0) {
-      skew = st.t0 - Date.now();
-    }
+  const now = Date.now();
+  if (type === 'start' && st.s === 0) {
+    st = { s: 1, t0: now, acc: 0, lc: 0, laps: [], r: (st.r || 1) + 1 };
+  } else if (type === 'stop' && st.s === 1) {
+    const el = st.acc + Math.max(0, now - st.t0);
+    st = { ...st, s: 2, t0: 0, acc: el, r: (st.r || 1) + 1 };
+  } else if (type === 'resume' && st.s === 2) {
+    st = { ...st, s: 1, t0: now, r: (st.r || 1) + 1 };
+  } else if (type === 'lap' && st.s === 1) {
+    const total = st.acc + Math.max(0, now - st.t0);
+    const prevTotal = st.laps.length > 0 ? st.laps[0][2] : 0;
+    const split = Math.max(0, total - prevTotal);
+    const num = (st.lc || 0) + 1;
+    st = { ...st, lc: num, laps: [[num, split, total], ...st.laps].slice(0, 10), r: (st.r || 1) + 1 };
+  } else if (type === 'reset' && (st.s === 2 || st.s === 0)) {
+    st = { s: 0, t0: 0, acc: 0, lc: 0, laps: [], r: (st.r || 1) + 1 };
+  } else {
+    return;
   }
 
+  persist();
   renderUI();
-}
-
-function sendAction(act) {
-  if (!TW || TW.isPreview || busy || !act) return;
-  busy = true;
-  setMsg('');
-  TW.request('timer:' + act + ':1').then(
-    function(res) {
-      busy = false;
-      try {
-        const rawRes = res?.result;
-        const resData = typeof rawRes === 'string' ? JSON.parse(rawRes) : rawRes;
-        if (resData) applyIncoming(resData);
-      } catch (err) {}
-    },
-    function(e) {
-      busy = false;
-      setMsg(e && e.code === 'NOT_ALLOWED' ? 'Open bot to control timer' : e && e.code === 'BUSY' ? 'Syncing...' : 'Error: ' + (e && e.code ? e.code : 'UNKNOWN'));
-    }
-  );
 }
 
 b1.onclick = function() {
   if (b1.disabled) return;
-  sendAction(b1.dataset.act);
+  act(b1.dataset.act);
 };
 
 b2.onclick = function() {
   if (b2.disabled) return;
-  sendAction(b2.dataset.act);
+  act(b2.dataset.act);
 };
-
-try {
-  TW?.watchPublicData?.();
-  TW?.onEvent?.('publicDataChanged', () => {
-    try {
-      if (TW?.publicData) {
-        applyIncoming(JSON.parse(TW.publicData));
-      }
-    } catch (e) {}
-  });
-  TW?.onEvent?.('activated', () => {
-    if (!document.hidden && st.s === 1) startTick();
-  });
-} catch (e) {}
 
 document.addEventListener('visibilitychange', () => {
   if (!document.hidden && st.s === 1) {
+    paintClock(getElapsed());
     startTick();
   } else {
     stopTick();
@@ -353,14 +357,18 @@ document.addEventListener('visibilitychange', () => {
 });
 
 try {
-  if (TW && TW.publicData) {
-    applyIncoming(typeof TW.publicData === 'string' ? JSON.parse(TW.publicData) : TW.publicData);
-  } else {
-    renderUI();
-  }
-} catch (e) {
-  renderUI();
-}
+  TW?.onEvent?.('activated', () => {
+    if (!document.hidden && st.s === 1) {
+      paintClock(getElapsed());
+      startTick();
+    }
+  });
+  TW?.onEvent?.('deactivated', () => {
+    stopTick();
+  });
+} catch (e) {}
+
+renderUI();
 
 try {
   TW?.ready?.();
