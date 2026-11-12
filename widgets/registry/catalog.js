@@ -1,0 +1,56 @@
+import pollWidget from '../definitions/poll/index.js';
+import duelWidget from '../definitions/duel/index.js';
+import timerWidget from '../definitions/timer/index.js';
+
+const byType = new Map();
+const byCommand = new Map();
+
+function register(def) {
+  if (!def || !def.type) return;
+  byType.set(def.type, def);
+  if (def.command) {
+    const cmd = def.command.toLowerCase();
+    byCommand.set(cmd, def);
+    if (cmd.startsWith('/')) {
+      byCommand.set(cmd.slice(1), def);
+    } else {
+      byCommand.set('/' + cmd, def);
+    }
+  }
+}
+
+register(pollWidget);
+register(duelWidget);
+register(timerWidget);
+
+/**
+ * Retrieves a widget definition by its type name ('poll', 'duel', etc.).
+ *
+ * @param {string} type
+ * @returns {object|null}
+ */
+export function getWidgetDefinition(type) {
+  if (!type || typeof type !== 'string') return null;
+  return byType.get(type) ?? null;
+}
+
+/**
+ * Retrieves a widget definition by its bot command ('/poll', 'poll', '/duel', etc.).
+ *
+ * @param {string} command
+ * @returns {object|null}
+ */
+export function getWidgetByCommand(command) {
+  if (!command || typeof command !== 'string') return null;
+  const firstWord = command.trim().split(/\s+/)[0].toLowerCase();
+  return byCommand.get(firstWord) ?? null;
+}
+
+/**
+ * Returns a list of all registered widget definitions.
+ *
+ * @returns {Array<object>}
+ */
+export function listWidgetDefinitions() {
+  return [pollWidget, duelWidget, timerWidget];
+}
