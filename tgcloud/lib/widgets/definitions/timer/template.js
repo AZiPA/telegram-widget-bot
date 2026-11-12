@@ -13,11 +13,12 @@ export function renderHtml() {
 <style>
 body{margin:0;padding:10px 14px max(12px,env(safe-area-inset-bottom)) 14px;font-family:system-ui,-apple-system,sans-serif;color:var(--tg-theme-text-color,#000);background:var(--tg-theme-bg-color,transparent);box-sizing:border-box;user-select:none;-webkit-user-select:none}
 .pills{display:flex;justify-content:center;align-items:center;gap:8px;margin-bottom:8px}
-.pill{padding:4px 14px;border-radius:14px;font-size:12px;font-weight:600;background:var(--tg-theme-secondary-bg-color,rgba(128,128,128,.15));color:var(--tg-theme-hint-color,#888);cursor:pointer;border:none;outline:none;transition:all .2s ease;font-family:inherit}
-.pill.active{background:var(--tg-theme-button-color,#3390ec);color:var(--tg-theme-button-text-color,#fff)}
+.dot,.pill{padding:4px 14px;border-radius:14px;font-size:12px;font-weight:600;background:var(--tg-theme-secondary-bg-color,rgba(128,128,128,.15));color:var(--tg-theme-hint-color,#888);cursor:pointer;border:none;outline:none;transition:all .2s ease;font-family:inherit}
+.dot.on,.pill.active{background:var(--tg-theme-button-color,#3390ec);color:var(--tg-theme-button-text-color,#fff)}
 #vp{overflow:hidden;touch-action:pan-y;user-select:none;-webkit-user-select:none;width:100%}
-#trk{display:flex;width:200%;transition:transform .24s cubic-bezier(.22,1,.36,1)}
+#trk{display:flex;align-items:flex-start;width:200%;transition:transform .22s cubic-bezier(.22,1,.36,1)}
 .pg{width:50%;box-sizing:border-box;flex-shrink:0;padding:0 2px}
+.pg.off{height:0;overflow:hidden;pointer-events:none}
 #clk{font-family:ui-monospace,monospace;font-variant-numeric:tabular-nums;font-size:30px;font-weight:700;text-align:center;margin:8px 0 10px;letter-spacing:0.5px}
 .l-hdr{display:flex;justify-content:space-between;font-size:11px;font-weight:600;color:var(--tg-theme-hint-color,#888);padding:4px 0 2px;border-bottom:1px solid var(--tg-theme-section-separator-color,rgba(128,128,128,.2));text-transform:uppercase;letter-spacing:0.3px}
 .l-row{display:flex;justify-content:space-between;font-family:ui-monospace,monospace;font-variant-numeric:tabular-nums;font-size:13px;padding:3px 0;border-bottom:1px solid var(--tg-theme-section-separator-color,rgba(128,128,128,.15))}
@@ -34,8 +35,8 @@ button[disabled]{opacity:.4;cursor:not-allowed}
 </head>
 <body>
 <div class="pills">
-  <button type="button" class="pill active" id="pAn">Analog</button>
-  <button type="button" class="pill" id="pDg">Digital</button>
+  <button type="button" class="dot on" id="d0">Analog</button>
+  <button type="button" class="dot" id="d1">Digital</button>
 </div>
 <div id="vp">
   <div id="trk">
@@ -60,7 +61,7 @@ button[disabled]{opacity:.4;cursor:not-allowed}
       </svg>
       <div id="l1"></div>
     </div>
-    <div class="pg" id="p1">
+    <div class="pg off" id="p1">
       <div id="clk">00:00:00.0</div>
       <div id="l2"></div>
     </div>
@@ -73,6 +74,14 @@ button[disabled]{opacity:.4;cursor:not-allowed}
 <script>
 const TW = window.TelegramWidget;
 const STORAGE_KEY = 'tw_sw_v1';
+const $ = (id) => document.getElementById(id);
+
+function pinBottom() {
+  if (TW && typeof TW.setResizeAnchor === 'function') {
+    try { TW.setResizeAnchor('bottom'); } catch {}
+  }
+}
+pinBottom();
 
 function loadInitialState() {
   try {
@@ -115,19 +124,19 @@ function loadInitialState() {
 let st = loadInitialState();
 let rafId = null;
 
-const vp = document.getElementById('vp');
-const trk = document.getElementById('trk');
-const pAn = document.getElementById('pAn');
-const pDg = document.getElementById('pDg');
+const vp = $('vp');
+const trk = $('trk');
+const d0 = $('d0');
+const d1 = $('d1');
 
-const clkEl = document.getElementById('clk');
-const hbEl = document.getElementById('hb');
-const hwEl = document.getElementById('hw');
-const l1El = document.getElementById('l1');
-const l2El = document.getElementById('l2');
+const clkEl = $('clk');
+const hbEl = $('hb');
+const hwEl = $('hw');
+const l1El = $('l1');
+const l2El = $('l2');
 
-const b1 = document.getElementById('b1');
-const b2 = document.getElementById('b2');
+const b1 = $('b1');
+const b2 = $('b2');
 
 let pg = 0;
 let sx = 0;
@@ -135,14 +144,18 @@ let sy = 0;
 let drag = false;
 
 function setPage(p) {
-  pg = p;
-  trk.style.transform = p ? 'translateX(-50%)' : 'translateX(0)';
-  pAn.className = 'pill' + (p === 0 ? ' active' : '');
-  pDg.className = 'pill' + (p === 1 ? ' active' : '');
+  pg = p ? 1 : 0;
+  pinBottom();
+  $('p0').className = pg === 0 ? 'pg' : 'pg off';
+  $('p1').className = pg === 1 ? 'pg' : 'pg off';
+  $('trk').style.transform = pg ? 'translateX(-50%)' : 'translateX(0)';
+  $('d0').className = pg === 0 ? 'dot on' : 'dot';
+  $('d1').className = pg === 1 ? 'dot on' : 'dot';
+  try { sessionStorage.setItem('tw_sw_pg', String(pg)); } catch {}
 }
 
-pAn.onclick = function() { setPage(0); };
-pDg.onclick = function() { setPage(1); };
+d0.onclick = function() { setPage(0); };
+d1.onclick = function() { setPage(1); };
 
 vp.onpointerdown = function(e) {
   if (e.isPrimary === false || (e.button !== undefined && e.button !== 0)) return;
@@ -304,6 +317,7 @@ function renderUI() {
     b2.dataset.act = 'reset';
   }
 
+  pinBottom();
   renderLapTable(l1El, st.laps ? st.laps.slice(0, 4) : []);
   renderLapTable(l2El, st.laps || []);
 }
@@ -312,6 +326,8 @@ function act(type) {
   try {
     TW?.HapticFeedback?.impactOccurred?.('light');
   } catch (e) {}
+
+  pinBottom();
 
   const now = Date.now();
   if (type === 'start' && st.s === 0) {
@@ -366,6 +382,11 @@ try {
   TW?.onEvent?.('deactivated', () => {
     stopTick();
   });
+} catch (e) {}
+
+try {
+  const savedPg = sessionStorage.getItem('tw_sw_pg');
+  if (savedPg === '1') setPage(1);
 } catch (e) {}
 
 renderUI();
