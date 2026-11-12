@@ -4,6 +4,9 @@
  */
 
 export const MAX_LAPS = 10;
+export const MAX_SERVER_LAPS = 10;
+export const MAX_server_LAPS = 10;
+export const MAX_CLIENT_LAPS = 150;
 
 /**
  * Parses parameters for the timer widget from raw text (e.g. "/timer Workout" or "/timer new").
@@ -155,7 +158,7 @@ export function applyTimerAction(prevState, action, nowMs = Date.now(), nextRevi
     const prevTotalMs = state.laps.length > 0 ? state.laps[0][2] : 0;
     const splitMs = Math.max(0, totalMs - prevTotalMs);
     const nextLapNum = (state.lc || 0) + 1;
-    const nextLaps = [[nextLapNum, splitMs, totalMs], ...state.laps].slice(0, MAX_LAPS);
+    const nextLaps = [[nextLapNum, splitMs, totalMs], ...state.laps].slice(0, MAX_server_LAPS);
     const nextState = {
       s: 1,
       t0: state.t0,

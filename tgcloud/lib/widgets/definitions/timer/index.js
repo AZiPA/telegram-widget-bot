@@ -16,7 +16,7 @@ export default {
   allowQueries: false,
   cacheTime: 30,
   width: 0,
-  height: 0,
+  height: 600,
   parseParams: parseTimerParams,
   defaultCaption,
   createInitialPublicData,
