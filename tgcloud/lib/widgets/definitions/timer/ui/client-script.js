@@ -5,8 +5,8 @@ export const TIMER_CLIENT_JS = `var TW=window.TelegramWidget||null,K='tw_sw_v1',
 try{TW?.setResizeAnchor?.('bottom');}catch(e){}
 function parseState(v){try{const p=typeof v==='string'?JSON.parse(v):v;if(p&&typeof p==='object')return{s:+p.s||0,t0:+p.t0||0,acc:+p.acc||0,lc:+p.lc||0,laps:Array.isArray(p.laps)?p.laps.slice(0,100):[],r:+p.r||1};}catch(e){}return null;}
 function loadInitialState(){return parseState(localStorage.getItem(K))||{s:0,t0:0,acc:0,lc:0,laps:[],r:1};}
-let st=loadInitialState(),raf=0,lapPg=0,pg=0,sx=0,sy=0,drag=0;
-const vp=$('vp'),trk=$('trk'),d0=$('d0'),d1=$('d1'),clk=$('clk'),aclk=$('aclk'),hb=$('hb'),hw=$('hw'),l1=$('l1'),l2=$('l2'),lpP=$('lpPrev'),lpN=$('lpNext'),lpI=$('lpInfo'),b1=$('b1'),b2=$('b2');
+let st=loadInitialState(),raf=0,lapPg=0,pg=0,sx=0,sy=0,drag=0,lastTxt='',lastDeg='',lastWdeg='init';
+const vp=$('vp'),trk=$('trk'),d0=$('d0'),d1=$('d1'),clk=$('clk'),aclk=$('aclk'),hb=$('hb'),hw=$('hw'),l1=$('l1'),l2=$('l2'),lpP=$('lpPrev'),lpN=$('lpNext'),lpI=$('lpInfo'),b1=$('b1'),b2=$('b2'),p0=$('p0'),p1=$('p1'),atbl=$('atbl'),dtbl=$('dtbl'),emptyDig=$('emptyDig'),pgr=$('pager');
 function setPage(p){pg=p?1:0;if(trk)trk.style.transform=pg?'translateX(-50%)':'translateX(0)';if(d0)d0.className=pg?'tab':'tab on';if(d1)d1.className=pg?'tab on':'tab';try{sessionStorage.setItem('tw_sw_pg',pg);}catch(e){}}
 if(d0)d0.onclick=function(){setPage(0);};
 if(d1)d1.onclick=function(){setPage(1);};
@@ -19,28 +19,52 @@ function fmt(ms){const t=Math.max(0,Math.floor(ms||0)),p=n=>String(Math.floor(n)
 function getElapsed(n=Date.now()){return st.s===1?st.acc+Math.max(0,n-st.t0):st.acc;}
 function deg(ms){return'rotate('+(((ms%60000)/60000)*360).toFixed(1)+' 80 80)';}
 function paintClock(m){
-const s=fmt(m);if(clk)clk.textContent=s;if(aclk)aclk.textContent=s;
-if(hb)hb.setAttribute('transform',deg(m));
-if(!st.s||!st.laps?.length){if(hw){hw.style.display='none';hw.setAttribute('transform','rotate(0 80 80)');}}
-else{if(hw){hw.style.display='';hw.setAttribute('transform',deg(Math.max(0,m-st.laps[0][2])));}}
+const s=fmt(m);
+if(s!==lastTxt){lastTxt=s;if(clk)clk.textContent=s;if(aclk)aclk.textContent=s;}
+const d=deg(m);
+if(d!==lastDeg){lastDeg=d;if(hb)hb.setAttribute('transform',d);}
+const w=(!st.s||!st.laps?.length)?'':deg(Math.max(0,m-st.laps[0][2]));
+if(w!==lastWdeg){
+lastWdeg=w;
+if(hw){
+if(!w){hw.style.display='none';hw.setAttribute('transform','rotate(0 80 80)');}
+else{hw.style.display='';hw.setAttribute('transform',w);}
+}
+}
 }
 function tick(){if(st.s===1&&!document.hidden){paintClock(getElapsed());raf=requestAnimationFrame(tick);}else raf=0;}
 function startTick(){if(!raf&&st.s===1&&!document.hidden)raf=requestAnimationFrame(tick);}
 function stopTick(){if(raf){cancelAnimationFrame(raf);raf=0;}}
-function drawRows(el,list,slots){
+function drawRows(el,list){
 if(!el)return;
-let h='';
-for(let i=0;i<slots;i++){const l=list[i];h+=l?'<div class="tr"><span>Lap '+l[0]+'</span><span>+'+fmt(l[1])+'</span><span>'+fmt(l[2])+'</span></div>':'<div class="tr"><span>—</span><span>—</span><span>—</span></div>';}
-el.innerHTML=h;
+el.innerHTML=(list||[]).map(l=>'<div class="tr"><span>Lap '+l[0]+'</span><span>+'+fmt(l[1])+'</span><span>'+fmt(l[2])+'</span></div>').join('');
 }
 function renderLaps(){
-const laps=st.laps||[];drawRows(l1,laps.slice(0,4),4);
-const tot=laps.length,pages=Math.max(1,Math.ceil(tot/8));
+const laps=st.laps||[],tot=laps.length;
+if(tot===0){
+if(atbl)atbl.style.display='none';
+if(dtbl)dtbl.style.display='none';
+if(pgr)pgr.style.display='none';
+if(emptyDig)emptyDig.style.display='';
+if(p0)p0.className='pg no-laps';
+if(p1)p1.className='pg no-laps';
+drawRows(l1,[]);
+drawRows(l2,[]);
+}else{
+if(atbl)atbl.style.display='block';
+if(dtbl)dtbl.style.display='block';
+if(pgr)pgr.style.display='flex';
+if(emptyDig)emptyDig.style.display='none';
+if(p0)p0.className='pg';
+if(p1)p1.className='pg';
+drawRows(l1,laps.slice(0,4));
+const pages=Math.max(1,Math.ceil(tot/8));
 if(lapPg>=pages)lapPg=Math.max(0,pages-1);
-drawRows(l2,laps.slice(lapPg*8,lapPg*8+8),8);
+drawRows(l2,laps.slice(lapPg*8,lapPg*8+8));
 if(lpP)lpP.disabled=lapPg<=0;
 if(lpN)lpN.disabled=(lapPg+1)*8>=tot;
 if(lpI)lpI.textContent='Page '+(lapPg+1)+' / '+pages;
+}
 }
 if(lpP)lpP.onclick=()=>{if(lapPg>0){lapPg--;renderLaps();}};
 if(lpN)lpN.onclick=()=>{if(lapPg<Math.max(0,Math.ceil((st.laps?.length||0)/8)-1)){lapPg++;renderLaps();}};

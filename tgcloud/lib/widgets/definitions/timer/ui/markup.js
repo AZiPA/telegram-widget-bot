@@ -13,23 +13,24 @@ export function renderTimerMarkup() {
     '</div>' +
     '<div id="vp">' +
     '<div id="trk">' +
-    '<div class="pg" id="p0">' +
-    '<div style="display:flex;flex-direction:column;align-items:center">' +
+    '<div class="pg no-laps" id="p0">' +
+    '<div class="clk-wrap">' +
     renderAnalogClockSvg() +
     '<div id="aclk">00:00:00.0</div>' +
     '</div>' +
-    '<div class="tbl">' +
-    '<div class="th"><span>Lap</span><span>Lap times</span><span>Overall time</span></div>' +
+    '<div class="tbl" id="atbl" style="display:none">' +
+    '<div class="th"><span>LAP</span><span>SPLIT</span><span>OVERALL</span></div>' +
     '<div id="l1"></div>' +
     '</div>' +
     '</div>' +
-    '<div class="pg" id="p1">' +
+    '<div class="pg no-laps" id="p1">' +
     '<div id="clk">00:00:00.0</div>' +
-    '<div class="tbl">' +
-    '<div class="th"><span>Lap</span><span>Lap times</span><span>Overall time</span></div>' +
+    '<div id="emptyDig" class="empty-msg">No laps recorded yet</div>' +
+    '<div class="tbl" id="dtbl" style="display:none">' +
+    '<div class="th"><span>LAP</span><span>SPLIT</span><span>OVERALL</span></div>' +
     '<div id="l2"></div>' +
     '</div>' +
-    '<div id="pager">' +
+    '<div id="pager" style="display:none">' +
     '<button id="lpPrev" class="pg-btn" disabled>‹ Newer</button>' +
     '<span id="lpInfo">Page 1 / 1</span>' +
     '<button id="lpNext" class="pg-btn" disabled>Older ›</button>' +
