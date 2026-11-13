@@ -4,23 +4,53 @@ import { resolve, join, dirname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const RAW_LIMIT = 32768; // 32 KB raw UTF-8
-const ZLIB_LIMIT = 3800; // 3800 B RFC 1950 zlib level 9
+const ZLIB_LIMIT = 4096; // 4096 B (4 KB) RFC 1950 zlib level 9 (Profile 1 limit)
+const MAX_HEAVY_PAINT_BOXES = 16;
+const MAX_BACKDROP_FILTERS = 2;
+const MAX_COMPLEX_SCRIPT_UNITS = 8192;
+const MAX_DOCUMENT_TEXT_UNITS = 48000;
+const MAX_INITIAL_STATE_BYTES = 1024;
 
 const FORBIDDEN_HTML_ELEMENTS = [
+  // Form elements out in Profile 1
+  { pattern: /<form\b/i, name: '<form>' },
   { pattern: /<input\b/i, name: '<input>' },
   { pattern: /<select\b/i, name: '<select>' },
+  { pattern: /<option\b/i, name: '<option>' },
+  { pattern: /<optgroup\b/i, name: '<optgroup>' },
   { pattern: /<textarea\b/i, name: '<textarea>' },
-  { pattern: /<iframe\b/i, name: '<iframe>' },
+  { pattern: /<label\b/i, name: '<label>' },
+  { pattern: /<fieldset\b/i, name: '<fieldset>' },
+  { pattern: /<legend\b/i, name: '<legend>' },
+  { pattern: /<datalist\b/i, name: '<datalist>' },
+  { pattern: /<output\b/i, name: '<output>' },
+  { pattern: /<progress\b/i, name: '<progress>' },
+  { pattern: /<meter\b/i, name: '<meter>' },
+  // Media elements out in Profile 1
   { pattern: /<audio\b/i, name: '<audio>' },
   { pattern: /<video\b/i, name: '<video>' },
+  { pattern: /<source\b/i, name: '<source>' },
+  { pattern: /<track\b/i, name: '<track>' },
+  // Embedding elements out in Profile 1
+  { pattern: /<iframe\b/i, name: '<iframe>' },
+  { pattern: /<frame\b/i, name: '<frame>' },
+  { pattern: /<frameset\b/i, name: '<frameset>' },
+  { pattern: /<object\b/i, name: '<object>' },
+  { pattern: /<embed\b/i, name: '<embed>' },
   { pattern: /<script[^>]+src\s*=/i, name: '<script src=...>' },
   { pattern: /<link\b/i, name: '<link>' },
+  // SVG <image> element out in Profile 1
+  { pattern: /<image\b/i, name: 'SVG <image>' },
 ];
 
 const FORBIDDEN_CSS_PATTERNS = [
   { pattern: /\d+(?:\.\d+)?(?:vh|dvh|svh)\b/i, name: 'CSS height units (vh, dvh, svh)' },
   { pattern: /@font-face\b/i, name: '@font-face' },
   { pattern: /@import\b/i, name: '@import' },
+  { pattern: /\boverflow(?:-[xy])?\s*:\s*[^;}]*\b(auto|scroll|overlay)\b/i, name: 'overflow: auto/scroll' },
+  { pattern: /\bposition\s*:\s*[^;}]*\b(?:-webkit-)?sticky\b/i, name: 'position: sticky' },
+  { pattern: /\b(matrix3d|translate3d|translatez|scale3d|scalez|rotate3d|rotatex|rotatey|rotatez|perspective)\s*\(/i, name: '3D CSS transform function' },
+  { pattern: /\b(perspective|transform-style|backface-visibility)\s*:/i, name: '3D CSS transform property' },
 ];
 
 const FORBIDDEN_JS_PATTERNS = [
@@ -29,6 +59,122 @@ const FORBIDDEN_JS_PATTERNS = [
   { pattern: /\bWebSocket\b/i, name: 'WebSocket' },
   { pattern: /TelegramWidget\.sendMessage\b/i, name: 'TelegramWidget.sendMessage' },
 ];
+
+/**
+ * Validates a single HTML rendering against all Profile 1 constraints.
+ *
+ * @param {string} html
+ * @param {string} widgetName
+ * @param {string} contextLabel
+ * @returns {{ rawBytes: number, compressedBytes: number, totalHeavyBoxes: number }}
+ */
+function validateHtmlOutput(html, widgetName, contextLabel) {
+  if (typeof html !== 'string' || !html.length) {
+    throw new Error(`Widget "${widgetName}" (${contextLabel}): renderHtml returned empty or non-string output`);
+  }
+
+  if (html.includes('\0')) {
+    throw new Error(`Widget "${widgetName}" (${contextLabel}): HTML contains forbidden NUL byte (\\0)`);
+  }
+
+  const rawBytes = Buffer.byteLength(html, 'utf8');
+  const compressedBytes = zlib.deflateSync(Buffer.from(html, 'utf8'), { level: 9 }).byteLength;
+
+  if (rawBytes > RAW_LIMIT) {
+    throw new Error(`Widget "${widgetName}" (${contextLabel}): raw UTF-8 size (${rawBytes} B) exceeds limit of ${RAW_LIMIT} B`);
+  }
+
+  if (compressedBytes > ZLIB_LIMIT) {
+    throw new Error(`Widget "${widgetName}" (${contextLabel}): compressed zlib level 9 size (${compressedBytes} B) exceeds Profile 1 limit of ${ZLIB_LIMIT} B`);
+  }
+
+  // Profile 1: Forbidden HTML Elements
+  for (const check of FORBIDDEN_HTML_ELEMENTS) {
+    if (check.pattern.test(html)) {
+      throw new Error(`Widget "${widgetName}" (${contextLabel}): contains forbidden Profile 1 HTML element ${check.name}`);
+    }
+  }
+
+  // Profile 1: Image MIME / URL checks in <img>
+  const imgRegex = /<img\b[^>]*\bsrc\s*=\s*(["']?)([^"'\s>]+)\1/gi;
+  let imgMatch;
+  while ((imgMatch = imgRegex.exec(html)) !== null) {
+    const src = imgMatch[2];
+    if (!/^data:image\/(?:png|jpeg|jpg|gif|webp)(?:;[a-z0-9\-]+=[a-z0-9\-]+)*(?:;base64)?,/i.test(src)) {
+      throw new Error(`Widget "${widgetName}" (${contextLabel}): <img> contains invalid src "${src.slice(0, 50)}". Only data: image/png, image/jpeg, image/jpg, image/gif, image/webp allowed in Profile 1`);
+    }
+  }
+
+  // Profile 1: CSS url() check
+  const cssUrlRegex = /\burl\s*\(\s*(["']?)([^"')]+)\1\s*\)/gi;
+  let urlMatch;
+  while ((urlMatch = cssUrlRegex.exec(html)) !== null) {
+    const urlVal = urlMatch[2].trim();
+    if (!urlVal.startsWith('#') && !/^data:image\/(?:png|jpeg|jpg|gif|webp)(?:;[a-z0-9\-]+=[a-z0-9\-]+)*(?:;base64)?,/i.test(urlVal)) {
+      throw new Error(`Widget "${widgetName}" (${contextLabel}): CSS url() contains invalid URL "${urlVal.slice(0, 50)}". Only data: image/png, image/jpeg, image/jpg, image/gif, image/webp or #fragment allowed in Profile 1`);
+    }
+  }
+
+  // Profile 1: Forbidden CSS Patterns
+  for (const check of FORBIDDEN_CSS_PATTERNS) {
+    if (check.pattern.test(html)) {
+      throw new Error(`Widget "${widgetName}" (${contextLabel}): contains forbidden Profile 1 CSS pattern ${check.name}`);
+    }
+  }
+
+  // Profile 1: Forbidden JS Patterns
+  for (const check of FORBIDDEN_JS_PATTERNS) {
+    if (check.pattern.test(html)) {
+      throw new Error(`Widget "${widgetName}" (${contextLabel}): contains forbidden Profile 1 JavaScript call ${check.name}`);
+    }
+  }
+
+  // Profile 1: Heavy Paint Box Count (<= 16 total, <= 2 backdrop-filter)
+  const backdropMatches = html.match(/(?:-webkit-)?backdrop-filter\s*:[^;}]*?(?:blur|brightness)\s*\(/gi);
+  const backdropCount = backdropMatches ? backdropMatches.length : 0;
+  if (backdropCount > MAX_BACKDROP_FILTERS) {
+    throw new Error(`Widget "${widgetName}" (${contextLabel}): backdrop-filter count (${backdropCount}) exceeds Profile 1 limit of ${MAX_BACKDROP_FILTERS}`);
+  }
+
+  const filterMatches = html.match(/\bfilter\s*:[^;}]*?(?:blur|brightness|drop-shadow)\s*\(/gi);
+  const filterCount = filterMatches ? filterMatches.length : 0;
+
+  const opacityMatches = html.match(/\bopacity\s*:\s*(?:0(?:\.\d+)?|\.\d+)\b/gi);
+  const opacityCount = opacityMatches ? opacityMatches.length : 0;
+
+  const shadowMatches = html.match(/\bbox-shadow\s*:\s*([^;}]+)/gi);
+  let blurredShadowCount = 0;
+  if (shadowMatches) {
+    for (const sh of shadowMatches) {
+      if (/\b(?:[1-9]\d*(?:\.\d+)?|0\.\d+)(?:px|em|rem)\b/.test(sh)) {
+        blurredShadowCount++;
+      }
+    }
+  }
+
+  const totalHeavyBoxes = backdropCount + filterCount + opacityCount + blurredShadowCount;
+  if (totalHeavyBoxes > MAX_HEAVY_PAINT_BOXES) {
+    throw new Error(`Widget "${widgetName}" (${contextLabel}): heavy paint box count (${totalHeavyBoxes}) exceeds Profile 1 limit of ${MAX_HEAVY_PAINT_BOXES}`);
+  }
+
+  // Profile 1: Complex-Script (Arabic/Persian) UTF-16 Budget <= 8192
+  const complexMatches = html.match(/[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/g);
+  const complexUnits = complexMatches ? complexMatches.length : 0;
+  if (complexUnits > MAX_COMPLEX_SCRIPT_UNITS) {
+    throw new Error(`Widget "${widgetName}" (${contextLabel}): complex-script UTF-16 units (${complexUnits}) exceeds Profile 1 budget limit of ${MAX_COMPLEX_SCRIPT_UNITS}`);
+  }
+
+  // Profile 1: Total Document Text Budget <= 48000
+  const textContent = html
+    .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, '')
+    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '')
+    .replace(/<[^>]+>/g, '');
+  if (textContent.length > MAX_DOCUMENT_TEXT_UNITS) {
+    throw new Error(`Widget "${widgetName}" (${contextLabel}): document text length (${textContent.length} UTF-16 units) exceeds Profile 1 budget limit of ${MAX_DOCUMENT_TEXT_UNITS}`);
+  }
+
+  return { rawBytes, compressedBytes, totalHeavyBoxes };
+}
 
 /**
  * Converts a widget name into a safe JavaScript variable identifier.
@@ -179,50 +325,80 @@ async function main() {
       throw new Error(`Widget "${name}": "renderHtml" must be a function`);
     }
 
-    // Render HTML and execute validation checks
-    const html = def.renderHtml({});
-
-    if (typeof html !== 'string' || !html.length) {
-      throw new Error(`Widget "${name}": renderHtml returned empty or non-string output`);
+    // Width / Height bounds validation: width is 0 or [200, 600]; height is 0 or [50, 600]
+    if (typeof def.width !== 'number' || (def.width !== 0 && (!Number.isInteger(def.width) || def.width < 200 || def.width > 600))) {
+      throw new Error(`Widget "${name}": "width" (${def.width}) must be 0 (auto) or an integer between 200 and 600`);
+    }
+    if (typeof def.height !== 'number' || (def.height !== 0 && (!Number.isInteger(def.height) || def.height < 50 || def.height > 600))) {
+      throw new Error(`Widget "${name}": "height" (${def.height}) must be 0 (auto) or an integer between 50 and 600`);
     }
 
-    if (html.includes('\0')) {
-      throw new Error(`Widget "${name}": HTML contains forbidden NUL byte (\\0)`);
-    }
-
-    const rawBytes = Buffer.byteLength(html, 'utf8');
-    const compressedBytes = zlib.deflateSync(Buffer.from(html, 'utf8'), { level: 9 }).byteLength;
-
-    if (rawBytes > RAW_LIMIT) {
-      throw new Error(`Widget "${name}": raw UTF-8 size (${rawBytes} B) exceeds limit of ${RAW_LIMIT} B`);
-    }
-
-    if (compressedBytes > ZLIB_LIMIT) {
-      throw new Error(`Widget "${name}": compressed zlib level 9 size (${compressedBytes} B) exceeds safe limit of ${ZLIB_LIMIT} B`);
-    }
-
-    // Profile 1 Static Checks: Forbidden HTML Elements
-    for (const check of FORBIDDEN_HTML_ELEMENTS) {
-      if (check.pattern.test(html)) {
-        throw new Error(`Widget "${name}": contains forbidden Profile 1 HTML element ${check.name}`);
+    // 1024-byte initial state limits
+    if (typeof def.createInitialChatData === 'function') {
+      const cd = def.createInitialChatData({});
+      if (cd !== null && cd !== undefined) {
+        const ser = typeof cd === 'string' ? cd : JSON.stringify(cd);
+        const bytes = Buffer.byteLength(ser, 'utf8');
+        if (bytes > MAX_INITIAL_STATE_BYTES) {
+          throw new Error(`Widget "${name}": initial chat_data size (${bytes} B) exceeds limit of ${MAX_INITIAL_STATE_BYTES} B`);
+        }
       }
     }
 
-    // Profile 1 Static Checks: Forbidden CSS Patterns
-    for (const check of FORBIDDEN_CSS_PATTERNS) {
-      if (check.pattern.test(html)) {
-        throw new Error(`Widget "${name}": contains forbidden Profile 1 CSS pattern ${check.name}`);
+    if (typeof def.createInitialPublicData === 'function') {
+      const pd = def.createInitialPublicData({});
+      if (pd !== null && pd !== undefined) {
+        const ser = typeof pd === 'string' ? pd : JSON.stringify(pd);
+        const bytes = Buffer.byteLength(ser, 'utf8');
+        if (bytes > MAX_INITIAL_STATE_BYTES) {
+          throw new Error(`Widget "${name}": initial public_data size (${bytes} B) exceeds limit of ${MAX_INITIAL_STATE_BYTES} B`);
+        }
       }
     }
 
-    // Profile 1 Static Checks: Forbidden JS Patterns
-    for (const check of FORBIDDEN_JS_PATTERNS) {
-      if (check.pattern.test(html)) {
-        throw new Error(`Widget "${name}": contains forbidden Profile 1 JavaScript call ${check.name}`);
+    // Parameterized renderHtml size checks
+    const paramVariations = [
+      { label: 'default params', params: {} },
+    ];
+
+    if (typeof def.parseParams === 'function') {
+      paramVariations.push({ label: 'parseParams("")', params: def.parseParams('') });
+      paramVariations.push({
+        label: 'parseParams(sample)',
+        params: def.parseParams('Custom Test | Item 1 | Item 2 | Item 3 | Item 4 | Item 5'),
+      });
+    }
+
+    if (name === 'poll') {
+      paramVariations.push({
+        label: 'boundary poll params',
+        params: {
+          q: 'Which feature should we ship next in widget profile 1? Extended question testing string.',
+          o: ['Option 1 (Alpha)', 'Option 2 (Beta)', 'Option 3 (Gamma)', 'Option 4 (Delta)', 'Option 5 (Epsilon)'],
+        },
+      });
+    } else if (name === 'duel') {
+      paramVariations.push({
+        label: 'boundary duel params',
+        params: { target: 15 },
+      });
+    } else if (name === 'timer') {
+      paramVariations.push({
+        label: 'boundary timer params',
+        params: { title: 'High Intensity Interval Training Session 40' },
+      });
+    }
+
+    let defaultStats = null;
+    for (const testCase of paramVariations) {
+      const html = def.renderHtml(testCase.params);
+      const stats = validateHtmlOutput(html, name, testCase.label);
+      if (testCase.label === 'default params') {
+        defaultStats = stats;
       }
     }
 
-    console.log(`[Widget Validated] ${name}: "${def.title}" (${def.command}) -> raw: ${rawBytes}B, zlib-9: ${compressedBytes}B (Profile 1 OK)`);
+    console.log(`[Widget Validated] ${name}: "${def.title}" (${def.command}) -> raw: ${defaultStats.rawBytes}B, zlib-9: ${defaultStats.compressedBytes}B, heavy boxes: ${defaultStats.totalHeavyBoxes} (Profile 1 OK)`);
 
     validatedWidgets.push({
       name,
