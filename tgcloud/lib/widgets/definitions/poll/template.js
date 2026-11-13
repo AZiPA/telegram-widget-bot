@@ -13,8 +13,8 @@ export function renderHtml() {
 <style>
 body {
   margin: 0;
-  padding: 12px 14px max(12px, env(safe-area-inset-bottom)) 20px;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  padding: 12px 20px max(12px, env(safe-area-inset-bottom)) 20px;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   color: var(--tg-theme-text-color, #000000);
   background: var(--tg-theme-bg-color, transparent);
   box-sizing: border-box;
@@ -58,8 +58,7 @@ body {
   left: 0;
   top: 0;
   bottom: 0;
-  background: var(--tg-theme-button-color, #2481cc);
-  opacity: 0.18;
+  background: rgba(36, 129, 204, 0.18);
   pointer-events: none;
 }
 .txt {
@@ -99,7 +98,7 @@ const TW = window.TelegramWidget;
 let lastRev = 0;
 let myVote = null;
 try {
-  const stored = localStorage.getItem(' vote') ?? localStorage.getItem('vote');
+  const stored = localStorage.getItem('vote');
   if (stored !== null && stored !== undefined) {
     myVote = parseInt(stored, 10);
   }
@@ -175,7 +174,6 @@ function draw() {
               cachedData = resData;
               myVote = idx;
               try {
-                localStorage.setItem(' vote', String(idx));
                 localStorage.setItem('vote', String(idx));
               } catch (e) {}
               statusText = '';

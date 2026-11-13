@@ -49,18 +49,6 @@ export async function onWidgetQuery({ query, action, instance }) {
   if (result.changed) {
     const { chatData, publicData } = result;
 
-    if (instance?.id) {
-      try {
-        await updateWidgetInstanceRecord(instance.id, {
-          chatData,
-          publicData,
-          revision: nextRevision,
-        });
-      } catch (dbErr) {
-        console.warn('[DuelActions] updateWidgetInstanceRecord warning:', dbErr);
-      }
-    }
-
     const chatId = query?.chat?.id ?? query?.message?.chat?.id ?? instance?.chatId;
     const messageId = query?.message_id ?? query?.message?.message_id ?? instance?.messageId;
     const inlineMessageId = query?.inline_message_id ?? instance?.inlineMessageId;
@@ -77,6 +65,19 @@ export async function onWidgetQuery({ query, action, instance }) {
       const isBotApi = err instanceof BotApiError || err?.name === 'BotApiError' || err?.code !== undefined;
       if (!(isBotApi && (err.code === 429 || err.code === 400))) {
         console.warn('[DuelActions] updateMessageWidgetState warning:', err);
+      }
+      throw err;
+    }
+
+    if (instance?.id) {
+      try {
+        await updateWidgetInstanceRecord(instance.id, {
+          chatData,
+          publicData,
+          revision: nextRevision,
+        });
+      } catch (dbErr) {
+        console.warn('[DuelActions] updateWidgetInstanceRecord warning:', dbErr);
       }
     }
 

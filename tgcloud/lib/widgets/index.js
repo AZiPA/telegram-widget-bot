@@ -1,3 +1,5 @@
+export { WIDGET_CONFIG } from './config.js';
+
 export {
   utf8ByteLength,
   assertValidWidgetHtml,
@@ -5,6 +7,13 @@ export {
   serializeQueryResult,
   parseQueryData,
 } from './core/validators.js';
+
+export {
+  extractWidgetMetaComment,
+  stripOptionalDocumentShell,
+  estimateCompressedSize,
+  inspectCustomWidgetHtml,
+} from './core/html-inspector.js';
 
 export {
   upsertSharedWidget,
@@ -17,6 +26,7 @@ export {
   insertWidgetInstance,
   getWidgetInstanceByMessage,
   updateWidgetInstanceRecord,
+  pruneExpiredWidgetInstances,
 } from './core/repository.js';
 
 export {
@@ -33,6 +43,8 @@ export {
   safeAnswerWidgetQuery,
 } from './core/query-responder.js';
 
+import { WIDGET_CONFIG } from './config.js';
+
 import {
   utf8ByteLength,
   assertValidWidgetHtml,
@@ -52,6 +64,7 @@ import {
   insertWidgetInstance,
   getWidgetInstanceByMessage,
   updateWidgetInstanceRecord,
+  pruneExpiredWidgetInstances,
 } from './core/repository.js';
 
 import {
@@ -69,6 +82,7 @@ import {
 } from './core/query-responder.js';
 
 export default {
+  WIDGET_CONFIG,
   utf8ByteLength,
   assertValidWidgetHtml,
   serializeStateData,
@@ -84,6 +98,7 @@ export default {
   insertWidgetInstance,
   getWidgetInstanceByMessage,
   updateWidgetInstanceRecord,
+  pruneExpiredWidgetInstances,
   sendWidgetMessage,
   sendSharedWidgetMessage,
   updateMessageWidgetState,

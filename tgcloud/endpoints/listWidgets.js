@@ -1,6 +1,5 @@
 import { EndpointError } from 'sdk';
 import { listWidgetDefinitions } from '../lib/widgets/registry/index.js';
-import { listRecentSharedWidgets } from '../lib/widgets/index.js';
 
 export default async function (input, ctx) {
   const user = ctx?.initData?.user;
@@ -13,6 +12,8 @@ export default async function (input, ctx) {
     command: def.command,
     title: def.title,
     description: def.description,
+    icon: def.icon ?? null,
+    launchLabel: def.launchLabel ?? null,
     isShared: Boolean(def.isShared),
     allowQueries: Boolean(def.allowQueries),
     cacheTime: def.cacheTime ?? null,
@@ -20,10 +21,7 @@ export default async function (input, ctx) {
     height: def.height ?? 0,
   }));
 
-  const sharedWidgets = await listRecentSharedWidgets({ limit: 20 });
-
   return {
     definitions,
-    sharedWidgets,
   };
 }

@@ -11,7 +11,7 @@ export function renderAnalogClockSvg() {
   }
   return (
     '<svg viewBox="0 0 160 160" width="212" height="212">' +
-    '<circle cx="80" cy="80" r="72" fill="var(--tg-theme-secondary-bg-color,rgba(128,128,128,.08))" stroke="var(--tg-theme-section-separator-color,rgba(128,128,128,.25))" stroke-width="2"/>' +
+    '<circle cx="80" cy="80" r="72" fill="var(--tg-theme-secondary-bg-color,rgba(128,128,128,.15))" stroke="var(--tg-theme-section-separator-color,rgba(128,128,128,.25))" stroke-width="2"/>' +
     ticks +
     '<text x="80" y="28" fill="var(--tg-theme-hint-color)" font-size="9" font-weight="600" text-anchor="middle">60</text>' +
     '<text x="134" y="83" fill="var(--tg-theme-hint-color)" font-size="9" font-weight="600" text-anchor="middle">15</text>' +

@@ -13,8 +13,8 @@ export function renderHtml() {
 <style>
 body {
   margin: 0;
-  padding: 12px 14px max(12px, env(safe-area-inset-bottom)) 20px;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  padding: 12px 20px max(12px, env(safe-area-inset-bottom)) 20px;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   color: var(--tg-theme-text-color, #000000);
   background: var(--tg-theme-bg-color, transparent);
   box-sizing: border-box;
@@ -121,6 +121,7 @@ body {
 
 <script>
 const TW = window.TelegramWidget;
+function esc(s){return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 let lastRev = 0;
 let cachedChatData = null;
 let currentAct = null;
@@ -148,7 +149,7 @@ function draw() {
     if (badgeEl) badgeEl.textContent = 'Snapshot';
     if (contentEl) {
       contentEl.innerHTML = '<div class="snapshot-card">' +
-        ((publicData && publicData.summary) ? publicData.summary : 'Duel snapshot') +
+        ((publicData && publicData.summary) ? esc(publicData.summary) : 'Duel snapshot') +
         '</div>';
     }
     renderStatus();
@@ -186,7 +187,7 @@ function draw() {
   currentAct = null;
 
   if (winner) {
-    btnHtml = '<button class="act-btn" disabled>🏆 ' + winner + ' won!</button>';
+    btnHtml = '<button class="act-btn" disabled>🏆 ' + esc(winner) + ' won!</button>';
   } else if (!p1) {
     btnHtml = '<button class="act-btn" id="btn">Join Duel</button>';
     currentAct = 'join';
@@ -212,12 +213,12 @@ function draw() {
     contentEl.innerHTML =
       '<div class="board">' +
         '<div class="player">' +
-          '<div class="p-name">' + (p1 ? p1.name : 'Open') + '</div>' +
+          '<div class="p-name">' + (p1 ? esc(p1.name) : 'Open') + '</div>' +
           '<div class="p-score">' + (p1 ? p1.s : '-') + '</div>' +
         '</div>' +
         '<div class="vs">VS</div>' +
         '<div class="player">' +
-          '<div class="p-name">' + (p2 ? p2.name : 'Open') + '</div>' +
+          '<div class="p-name">' + (p2 ? esc(p2.name) : 'Open') + '</div>' +
           '<div class="p-score">' + (p2 ? p2.s : '-') + '</div>' +
         '</div>' +
       '</div>' +

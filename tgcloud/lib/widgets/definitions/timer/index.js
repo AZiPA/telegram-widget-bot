@@ -5,25 +5,24 @@ import {
   createInitialChatData,
 } from './state.js';
 import { renderHtml } from './template.js';
-import { onWidgetQuery, onSharedWidgetQuery } from './actions.js';
 
 export default {
   type: 'timer',
   command: '/timer',
+  icon: '⏱️',
   title: 'Stopwatch',
-  description: 'Hybrid analog & digital chronograph with split laps',
+  launchLabel: 'Launch Stopwatch',
+  order: 10,
+  description: 'Personal hybrid analog & digital chronograph with split laps',
   isShared: false,
   allowQueries: false,
-  cacheTime: 30,
   width: 0,
-  height: 600,
+  height: 550,
   parseParams: parseTimerParams,
   defaultCaption,
   createInitialPublicData,
   createInitialChatData,
   renderHtml,
-  onWidgetQuery,
-  onSharedWidgetQuery,
 };
 
 export {
@@ -32,6 +31,4 @@ export {
   createInitialPublicData,
   createInitialChatData,
   renderHtml,
-  onWidgetQuery,
-  onSharedWidgetQuery,
 };

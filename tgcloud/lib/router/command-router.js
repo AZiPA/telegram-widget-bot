@@ -1,11 +1,14 @@
-import { api } from 'sdk';
+import { api, BotApiError } from 'sdk';
+import { WIDGET_CONFIG } from '../widgets/config.js';
 import { sendWidgetMessage } from '../widgets/index.js';
 import {
   getWidgetByCommand,
   getWidgetDefinition,
-  resolveAndDispatchWidgetQuery,
+  listWidgetDefinitions,
 } from '../widgets/registry/index.js';
+import { tryInterceptWidgetUpdate } from './widget-query-router.js';
 import { handleShareCommand } from '../commands/share.js';
+import { handleHtmlDocumentUpload } from '../commands/upload-widget.js';
 
 /**
  * Routes message updates and parses bot commands or widget queries.
@@ -15,13 +18,16 @@ import { handleShareCommand } from '../commands/share.js';
  * @returns {Promise<object>} Handled status and metadata
  */
 export async function routeMessageUpdate(message, ctx) {
-  // Check for direct widget queries passed on the update
-  if (ctx?.update?.widget_query) {
-    return await resolveAndDispatchWidgetQuery(ctx.update.widget_query, { isSharedCopy: false });
+  const intercepted = await tryInterceptWidgetUpdate(ctx);
+  if (intercepted.intercepted) {
+    return intercepted.result;
   }
 
-  if (ctx?.update?.shared_widget_query) {
-    return await resolveAndDispatchWidgetQuery(ctx.update.shared_widget_query, { isSharedCopy: true });
+  if (message?.document) {
+    const uploadRes = await handleHtmlDocumentUpload(message);
+    if (uploadRes?.handled) {
+      return uploadRes;
+    }
   }
 
   if (!message?.text || !message?.chat?.id) {
@@ -39,27 +45,50 @@ export async function routeMessageUpdate(message, ctx) {
 
   // /start deep link
   if (command === '/start' && argText) {
-    const timerDef = getWidgetDefinition('timer');
-    if (timerDef) {
-      await sendWidgetMessage(timerDef, {
-        chatId: message.chat.id,
-        params: {},
-        createdBy: message.from?.id ?? null,
-      });
-      return { handled: true, command: '/start', deepLink: argText };
+    const targetType = argText.replace(/^launch_/i, '').trim().toLowerCase();
+    const def = getWidgetDefinition(targetType);
+    if (def) {
+      if (message.chat.type !== 'private' && !WIDGET_CONFIG.ALLOW_GROUP_WIDGETS) {
+        await api.sendMessage({
+          chat_id: message.chat.id,
+          text: 'Interactive widgets can only be launched in private chats. Please open a private chat with the bot and send /start.',
+        });
+        return { handled: true, chatRestricted: true };
+      }
+
+      try {
+        await sendWidgetMessage(def, {
+          chatId: message.chat.id,
+          chatType: message.chat.type,
+          params: {},
+          createdBy: message.from?.id ?? null,
+        });
+      } catch (err) {
+        if (err instanceof BotApiError || err?.name === 'BotApiError') {
+          console.warn(`[command-router] BotApiError ${err.code} sending deep-linked widget: ${err.description || err.message}`);
+        } else {
+          console.error('[command-router] Error sending deep-linked widget:', err);
+        }
+      }
+      return { handled: true, command: '/start', deepLink: targetType };
     }
   }
 
   if (command === '/start' || command === '/help') {
+    const commandLines = listWidgetDefinitions().map((def) => {
+      const cmd = def.command.startsWith('/') ? def.command : `/${def.command}`;
+      return `${cmd} - ${def.title}${def.description ? ' (' + def.description + ')' : ''}`;
+    });
+    commandLines.push('/share - Launch widgets menu');
+    commandLines.push('/help - Show this help message');
+
     const text = [
       '⚡ Telegram Serverless Widget Engine',
       '',
       'Available commands:',
-      '/timer - Stopwatch (Hybrid analog & digital chronograph with split laps)',
-      '/duel - Tap Duel (Real-time 2-player tapping battle)',
-      '/poll - Interactive Poll (Live multi-option voting with progress bars)',
-      '/share - Launch widgets menu',
-      '/help - Show this help message',
+      ...commandLines,
+      '',
+      '📄 Send any .html file in this chat to validate & launch it as a live widget!',
     ].join('\n');
 
     await api.sendMessage({
@@ -74,31 +103,32 @@ export async function routeMessageUpdate(message, ctx) {
     return await handleShareCommand(message, argText);
   }
 
-  // /timer always sends a fresh, responsive Stopwatch widget
-  if (command === '/timer') {
-    const timerDef = getWidgetDefinition('timer');
-    if (timerDef) {
-      const params = typeof timerDef.parseParams === 'function'
-        ? timerDef.parseParams(argText)
-        : { title: argText };
-      await sendWidgetMessage(timerDef, {
+  // Registered widget command (/timer, /poll, /duel, etc.)
+  const def = getWidgetByCommand(command);
+  if (def) {
+    if (message.chat.type !== 'private' && !WIDGET_CONFIG.ALLOW_GROUP_WIDGETS) {
+      await api.sendMessage({
+        chat_id: message.chat.id,
+        text: 'Interactive widgets can only be launched in private chats. Please open a private chat with the bot and send /start.',
+      });
+      return { handled: true, chatRestricted: true };
+    }
+
+    const params = typeof def.parseParams === 'function' ? def.parseParams(argText) : {};
+    try {
+      await sendWidgetMessage(def, {
         chatId: message.chat.id,
+        chatType: message.chat.type,
         params,
         createdBy: message.from?.id ?? null,
       });
-      return { handled: true, type: 'timer' };
+    } catch (err) {
+      if (err instanceof BotApiError || err?.name === 'BotApiError') {
+        console.warn(`[command-router] BotApiError ${err.code} sending widget: ${err.description || err.message}`);
+      } else {
+        console.error('[command-router] Error sending widget:', err);
+      }
     }
-  }
-
-  // Registered widget command (/poll, /duel, etc.)
-  const def = getWidgetByCommand(command);
-  if (def) {
-    const params = typeof def.parseParams === 'function' ? def.parseParams(argText) : {};
-    await sendWidgetMessage(def, {
-      chatId: message.chat.id,
-      params,
-      createdBy: message.from?.id ?? null,
-    });
     return { handled: true, type: def.type };
   }
 

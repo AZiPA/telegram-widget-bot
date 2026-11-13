@@ -1,5 +1,5 @@
 import { db } from 'sdk';
-import { eq, and, desc, sql } from 'sdk/db';
+import { eq, and, desc, sql, lt } from 'sdk/db';
 import { sharedWidgets, widgetInstances } from '../../../schema.js';
 
 /**
@@ -195,4 +195,19 @@ export async function updateWidgetInstanceRecord(id, { chatData, publicData, rev
     .run();
 
   return Array.isArray(res) ? res[0] : (res?.rows?.[0] ?? res);
+}
+
+/**
+ * Prunes expired widget instances to keep SQLite lean and recycle freelist pages.
+ * @param {number} [ttlSeconds=604800]
+ * @returns {Promise<object|null>}
+ */
+export async function pruneExpiredWidgetInstances(ttlSeconds = 604800) {
+  try {
+    const cutoff = new Date(Date.now() - ttlSeconds * 1000);
+    return await db.delete(widgetInstances).where(lt(widgetInstances.updatedAt, cutoff)).run();
+  } catch (err) {
+    console.warn('[Repository] pruneExpiredWidgetInstances warning:', err);
+    return null;
+  }
 }

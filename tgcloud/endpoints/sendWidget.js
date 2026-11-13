@@ -14,13 +14,13 @@ export default async function (input, ctx) {
   }
 
   const res = await sendWidgetMessage(def, {
-    chatId: input?.chatId ?? user.id,
+    chatId: user.id,
+    chatType: 'private',
     params: input?.params ?? {},
     createdBy: user.id,
   });
 
   return {
     messageId: res.message.message_id,
-    widgetId: res.widgetId,
   };
 }

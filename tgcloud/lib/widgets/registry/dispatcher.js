@@ -1,9 +1,7 @@
-import {
-  parseQueryData,
-  getSharedWidgetById,
-  getWidgetInstanceByMessage,
-  safeAnswerWidgetQuery,
-} from '../index.js';
+import { parseQueryData } from '../core/validators.js';
+import { getSharedWidgetById, getWidgetInstanceByMessage } from '../core/repository.js';
+import { safeAnswerWidgetQuery } from '../core/query-responder.js';
+import { updateMessageWidgetState } from '../core/state-mutator.js';
 import { getWidgetDefinition } from './catalog.js';
 
 export async function resolveAndDispatchWidgetQuery(widgetQuery, { isSharedCopy = false } = {}) {
@@ -41,12 +39,43 @@ export async function resolveAndDispatchWidgetQuery(widgetQuery, { isSharedCopy 
       }
     }
 
-    const resolvedType = parsed.type || sharedWidget?.type || instance?.type || null;
+    const resolvedType = parsed.type || instance?.type || sharedWidget?.type || null;
     const def = resolvedType ? getWidgetDefinition(resolvedType) : null;
 
     if (!def) {
-      console.warn('[Dispatcher] No widget definition found for query:', widgetQuery.data);
-      return null;
+      // Built-in sandbox responder for custom uploaded widgets
+      const rawData = String(widgetQuery.data ?? '');
+      let parsedChatData = null;
+
+      if (rawData.startsWith('chat:') || rawData.startsWith('state:')) {
+        const colonIdx = rawData.indexOf(':');
+        const jsonStr = rawData.slice(colonIdx + 1).trim();
+        try {
+          parsedChatData = JSON.parse(jsonStr);
+        } catch {
+          // Ignore invalid JSON in chat: / state: data
+        }
+      }
+
+      if (parsedChatData !== null && ((chatId && messageId) || inlineMessageId)) {
+        try {
+          await updateMessageWidgetState({
+            chatId,
+            messageId,
+            inlineMessageId,
+            chatData: parsedChatData,
+          });
+        } catch (stateErr) {
+          console.warn('[Dispatcher] Sandbox state update warning:', stateErr?.message ?? stateErr);
+        }
+      }
+
+      answerPayload = {
+        ok: true,
+        echo: rawData.slice(0, 64),
+        ts: Date.now(),
+      };
+      return answerPayload;
     }
 
     const normalizedQuery = {
