@@ -23,7 +23,7 @@ export function renderTimerMarkup() {
     '<div id="l1"></div>' +
     '</div>' +
     '</div>' +
-    '<div class="pg no-laps" id="p1">' +
+    '<div class="pg no-laps" id="p1" style="visibility:hidden">' +
     '<div id="clk">00:00:00.0</div>' +
     '<div id="emptyDig" class="empty-msg">No laps recorded yet</div>' +
     '<div class="tbl" id="dtbl" style="display:none">' +

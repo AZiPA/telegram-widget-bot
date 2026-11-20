@@ -1,12 +1,16 @@
 {
-  "name": "widget_bot",
+  "name": "telegram-widget-bot",
+  "version": "1.0.0",
+  "description": "Modular HTML Chat Widget Engine (Profile 1) and custom .html validator running natively on Telegram Serverless",
+  "license": "MPL-2.0",
   "private": true,
   "type": "module",
   "devDependencies": {
     "@tgcloud/cli": "^0.2.0"
   },
   "scripts": {
-    "deploy": "tgcloud push",
+    "validate": "node scripts/validate-widgets.js",
+    "deploy": "node scripts/validate-widgets.js && tgcloud push",
     "status": "tgcloud status",
     "run": "tgcloud run"
   }

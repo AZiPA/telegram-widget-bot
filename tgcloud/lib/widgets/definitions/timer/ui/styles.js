@@ -11,7 +11,7 @@ button[disabled]{color:var(--tg-theme-hint-color);cursor:not-allowed}
 .tab{padding:4px 14px;border-radius:14px;color:var(--tg-theme-hint-color)}
 .tab.on{background:var(--tg-theme-button-color,#3390ec);color:var(--tg-theme-button-text-color,#fff)}
 .pg-btn{padding:6px 12px;border-radius:6px;color:var(--tg-theme-button-color,#3390ec)}
-#vp{display:block;width:100%;flex:1;min-height:0;overflow:hidden;touch-action:pan-y;margin:6px 0}
+#vp{position:relative;display:block;width:100%;flex:1;min-height:0;overflow:hidden;touch-action:pan-y;margin:6px 0}
 #trk{display:flex;width:200%;height:100%;flex-shrink:0;transition:transform .24s cubic-bezier(.22,1,.36,1)}
 .pg{width:50%;min-width:50%;max-width:50%;height:100%;overflow:hidden;box-sizing:border-box;flex-shrink:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px}
 .clk-wrap{display:flex;flex-direction:column;align-items:center;justify-content:center;width:100%;flex-shrink:0}

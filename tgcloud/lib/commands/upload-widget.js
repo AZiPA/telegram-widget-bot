@@ -2,6 +2,7 @@ import { api, BotApiError } from 'sdk';
 import { WIDGET_CONFIG } from '../widgets/config.js';
 import { inspectCustomWidgetHtml } from '../widgets/core/html-inspector.js';
 import { serializeStateData } from '../widgets/core/validators.js';
+import { escapeHtmlText } from '../widgets/template-utils.js';
 
 /**
  * Handles incoming custom .html document uploads from users in private chats,
@@ -132,29 +133,30 @@ export async function handleHtmlDocumentUpload(message) {
   // Check validation status
   if (!report.valid || (strictMode && report.warnings.length > 0)) {
     const lines = [];
-    lines.push('❌ **Widget Profile 1 Validation Failed**\n');
-    lines.push(`📊 **Size:** ${report.rawBytes.toLocaleString()} B raw (limit: 32,768 B)`);
+    lines.push('❌ <b>Widget Profile 1 Validation Failed</b>\n');
+    lines.push(`📊 <b>Size:</b> ${escapeHtmlText(report.rawBytes.toLocaleString())} B raw (limit: 32,768 B)`);
     if (report.compressedEstimate.exact && report.compressedEstimate.bytes !== null) {
-      lines.push(`📦 **Estimated Compressed Size:** ${report.compressedEstimate.bytes.toLocaleString()} B (limit: 4,096 B)`);
+      lines.push(`📦 <b>Estimated Compressed Size:</b> ${escapeHtmlText(report.compressedEstimate.bytes.toLocaleString())} B (limit: 4,096 B)`);
     }
 
     if (report.errors.length > 0) {
-      lines.push('\n🚫 **Blocking Errors:**');
+      lines.push('\n🚫 <b>Blocking Errors:</b>');
       for (const e of report.errors) {
-        lines.push(`• ${e}`);
+        lines.push(`• ${escapeHtmlText(e)}`);
       }
     }
 
     if (report.warnings.length > 0) {
-      lines.push(`\n⚠️ **Profile 1 Warnings${strictMode ? ' (Strict Mode)' : ''}:**`);
+      lines.push(`\n⚠️ <b>Profile 1 Warnings${strictMode ? ' (Strict Mode)' : ''}:</b>`);
       for (const w of report.warnings) {
-        lines.push(`• ${w}`);
+        lines.push(`• ${escapeHtmlText(w)}`);
       }
     }
 
     await api.sendMessage({
       chat_id: message.chat.id,
       text: lines.join('\n'),
+      parse_mode: 'HTML',
       reply_to_message_id: message.message_id,
     });
 
@@ -213,14 +215,15 @@ export async function handleHtmlDocumentUpload(message) {
   // Follow-up warnings message if any non-blocking warnings exist in non-strict mode
   if (report.warnings.length > 0) {
     const warnLines = [
-      '⚠️ **Widget Profile 1 Warnings**',
+      '⚠️ <b>Widget Profile 1 Warnings</b>',
       'The following features are outside Telegram Widget Profile 1 and may be stripped or degraded on Telegram clients:',
-      ...report.warnings.map((w) => `• ${w}`),
+      ...report.warnings.map((w) => `• ${escapeHtmlText(w)}`),
     ];
     try {
       await api.sendMessage({
         chat_id: message.chat.id,
         text: warnLines.join('\n'),
+        parse_mode: 'HTML',
         reply_to_message_id: sentMsg?.message_id || message.message_id,
       });
     } catch (warnErr) {

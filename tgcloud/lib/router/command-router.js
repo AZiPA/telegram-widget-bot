@@ -82,13 +82,17 @@ export async function routeMessageUpdate(message, ctx) {
     commandLines.push('/share - Launch widgets menu');
     commandLines.push('/help - Show this help message');
 
+    const uploadHint = message.chat.type === 'private'
+      ? '📄 Send any .html file in this chat to validate & launch it as a live widget!'
+      : '📄 Send any .html file in a private chat with the bot to validate & launch it as a live widget!';
+
     const text = [
       '⚡ Telegram Serverless Widget Engine',
       '',
       'Available commands:',
       ...commandLines,
       '',
-      '📄 Send any .html file in this chat to validate & launch it as a live widget!',
+      uploadHint,
     ].join('\n');
 
     await api.sendMessage({

@@ -5,9 +5,9 @@ export const TIMER_CLIENT_JS = `var TW=window.TelegramWidget||null,K='tw_sw_v1',
 try{TW?.setResizeAnchor?.('bottom');}catch(e){}
 function parseState(v){try{const p=typeof v==='string'?JSON.parse(v):v;if(p&&typeof p==='object')return{s:+p.s||0,t0:+p.t0||0,acc:+p.acc||0,lc:+p.lc||0,laps:Array.isArray(p.laps)?p.laps.slice(0,100):[],r:+p.r||1};}catch(e){}return null;}
 function loadInitialState(){return parseState(localStorage.getItem(K))||{s:0,t0:0,acc:0,lc:0,laps:[],r:1};}
-let st=loadInitialState(),raf=0,lapPg=0,pg=0,sx=0,sy=0,drag=0,lastTxt='',lastDeg='',lastWdeg='init';
+let st=loadInitialState(),raf=0,visTmr=0,lapPg=0,pg=0,sx=0,sy=0,drag=0,lastTxt='',lastDeg='',lastWdeg='init';
 const vp=$('vp'),trk=$('trk'),d0=$('d0'),d1=$('d1'),clk=$('clk'),aclk=$('aclk'),hb=$('hb'),hw=$('hw'),l1=$('l1'),l2=$('l2'),lpP=$('lpPrev'),lpN=$('lpNext'),lpI=$('lpInfo'),b1=$('b1'),b2=$('b2'),p0=$('p0'),p1=$('p1'),atbl=$('atbl'),dtbl=$('dtbl'),emptyDig=$('emptyDig'),pgr=$('pager');
-function setPage(p){pg=p?1:0;if(trk)trk.style.transform=pg?'translateX(-50%)':'translateX(0)';if(d0)d0.className=pg?'tab':'tab on';if(d1)d1.className=pg?'tab on':'tab';try{sessionStorage.setItem('tw_sw_pg',pg);}catch(e){}}
+function setPage(p){pg=p?1:0;if(visTmr){clearTimeout(visTmr);visTmr=0;}if(p0)p0.style.visibility='visible';if(p1)p1.style.visibility='visible';if(trk)trk.style.transform=pg?'translateX(-50%)':'translateX(0)';if(d0)d0.className=pg?'tab':'tab on';if(d1)d1.className=pg?'tab on':'tab';visTmr=setTimeout(()=>{if(p0)p0.style.visibility=pg?'hidden':'visible';if(p1)p1.style.visibility=pg?'visible':'hidden';visTmr=0;},260);try{sessionStorage.setItem('tw_sw_pg',pg);}catch(e){}}
 if(d0)d0.onclick=function(){setPage(0);};
 if(d1)d1.onclick=function(){setPage(1);};
 if(vp){
