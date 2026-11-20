@@ -1,96 +1,70 @@
 import { api } from 'sdk';
-import {
-  listRecentSharedWidgets,
-  serializeStateData,
-} from '../widgets/index.js';
-import {
-  listWidgetDefinitions,
-  getWidgetDefinition,
-} from '../widgets/registry/index.js';
+import { listWidgetDefinitions } from '../widgets/registry/index.js';
 
-/**
- * Handles inline query updates by providing articles for recent shared widgets
- * and registered widget templates.
- *
- * @param {object} inlineQuery - Telegram InlineQuery object
- * @returns {Promise<object|null>} Result of answerInlineQuery
- */
+let cachedBotUsername = null;
+
+async function getBotUsername() {
+  if (cachedBotUsername) return cachedBotUsername;
+  try {
+    const me = await api.getMe();
+    if (me?.username) {
+      cachedBotUsername = me.username;
+    }
+  } catch (err) {
+    console.warn('[InlineRouter] Failed to fetch bot info:', err?.description ?? err.message);
+  }
+  return cachedBotUsername;
+}
+
 export async function routeInlineQueryUpdate(inlineQuery) {
-  if (!inlineQuery?.id) {
-    return null;
-  }
+  if (!inlineQuery || !inlineQuery.id) return;
 
-  // Fetch up to 10 recent shared widgets
-  const recentShared = await listRecentSharedWidgets({ limit: 10 });
-  const sharedResults = [];
+  const q = String(inlineQuery.query ?? '').trim().toLowerCase();
+  const allDefs = listWidgetDefinitions();
+  const matched = allDefs.filter(
+    (d) =>
+      !q ||
+      d.type.toLowerCase().includes(q) ||
+      d.title.toLowerCase().includes(q) ||
+      (d.description && d.description.toLowerCase().includes(q))
+  );
+  const defs = matched.length > 0 ? matched : allDefs;
 
-  for (const row of recentShared) {
-    const def = getWidgetDefinition(row.type);
-    if (!def) continue;
+  const botUsername = await getBotUsername();
 
-    const caption = typeof def.defaultCaption === 'function'
-      ? def.defaultCaption(row.publicData ?? {})
-      : (def.defaultCaption ?? '');
+  const results = defs.map((def) => {
+    const icon = def.icon || '🧩';
+    const label = def.launchLabel || `Launch ${def.title}`;
+    const buttonText = `${icon} ${label}`;
+    const caption = typeof def.defaultCaption === 'function' ? def.defaultCaption({}) : def.title;
+    const descText = def.description ? `\n${def.description}` : '';
 
-    sharedResults.push({
-      type: 'article',
-      id: `shared_${row.widgetId}`,
-      title: `${def.title || row.type} (${row.widgetId})`,
-      description: def.description || `Shared ${row.type} widget`,
-      input_message_content: {
-        widget_id: row.widgetId,
-        caption,
-      },
-    });
-  }
-
-  // Map registered definitions to template articles
-  const defs = listWidgetDefinitions();
-  const defResults = defs.map((def) => {
-    const caption = typeof def.defaultCaption === 'function'
-      ? def.defaultCaption({})
-      : (def.defaultCaption ?? '');
-
-    const pubData = def.createInitialPublicData
-      ? def.createInitialPublicData({}, { revision: 1 })
-      : undefined;
-    const chatData = def.createInitialChatData
-      ? def.createInitialChatData({}, { revision: 1 })
-      : undefined;
-
-    const inputMessageContent = {
-      html: typeof def.renderHtml === 'function' ? def.renderHtml({}) : '',
-      width: def.width ?? 0,
-      height: def.height ?? 0,
-      caption,
-      allow_queries: Boolean(def.allowQueries),
-      is_shared: Boolean(def.isShared),
-    };
-
-    const pubSerialized = serializeStateData(pubData);
-    if (pubSerialized !== undefined) {
-      inputMessageContent.public_data = pubSerialized;
-    }
-
-    const chatSerialized = serializeStateData(chatData);
-    if (chatSerialized !== undefined) {
-      inputMessageContent.chat_data = chatSerialized;
-    }
+    const button = botUsername
+      ? { text: buttonText, url: `https://t.me/${botUsername}?start=launch_${def.type}` }
+      : { text: buttonText, callback_data: `share_new:${def.type}` };
 
     return {
       type: 'article',
-      id: `def_${def.type}`,
-      title: def.title || def.type,
-      description: def.description || `Create a new ${def.type} widget`,
-      input_message_content: inputMessageContent,
+      id: `launch_${def.type}`,
+      title: `${icon} ${def.title}`,
+      description: def.description || 'Tap to launch in bot chat',
+      input_message_content: {
+        message_text: `${caption}${descText}\n\nTap the button below to launch this widget in a private chat.`,
+      },
+      reply_markup: {
+        inline_keyboard: [[button]],
+      },
     };
   });
 
-  const results = [...sharedResults, ...defResults];
-
-  return await api.answerInlineQuery({
-    inline_query_id: inlineQuery.id,
-    results,
-    cache_time: 5,
-  });
+  try {
+    await api.answerInlineQuery({
+      inline_query_id: inlineQuery.id,
+      results,
+      cache_time: 1,
+      is_personal: true,
+    });
+  } catch (err) {
+    console.error('[InlineRouter] answerInlineQuery error:', err);
+  }
 }

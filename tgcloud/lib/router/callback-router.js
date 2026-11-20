@@ -1,5 +1,11 @@
 import { api, BotApiError } from 'sdk';
-import { resolveAndDispatchWidgetQuery } from '../widgets/registry/index.js';
+import { WIDGET_CONFIG } from '../widgets/config.js';
+import { sendWidgetMessage } from '../widgets/index.js';
+import {
+  getWidgetDefinition,
+  resolveAndDispatchWidgetQuery,
+} from '../widgets/registry/index.js';
+import { tryInterceptWidgetUpdate } from './widget-query-router.js';
 
 /**
  * Handles callback queries and widget query bridges.
@@ -9,15 +15,61 @@ import { resolveAndDispatchWidgetQuery } from '../widgets/registry/index.js';
  * @returns {Promise<*>} Result of handling the query
  */
 export async function routeCallbackQueryUpdate(callbackQuery, ctx) {
-  if (ctx?.update?.widget_query) {
-    return await resolveAndDispatchWidgetQuery(ctx.update.widget_query, { isSharedCopy: false });
+  const intercepted = await tryInterceptWidgetUpdate(ctx);
+  if (intercepted.intercepted) {
+    return intercepted.result;
   }
 
-  if (ctx?.update?.shared_widget_query) {
-    return await resolveAndDispatchWidgetQuery(ctx.update.shared_widget_query, { isSharedCopy: true });
+  const data = callbackQuery?.data || '';
+
+  if (data.startsWith('share_new:')) {
+    const type = data.slice(10);
+    const chatType = callbackQuery.message?.chat?.type;
+    const chatId = callbackQuery.message?.chat?.id;
+    const isPrivateChat = chatType === 'private';
+    const isAllowed = isPrivateChat || Boolean(WIDGET_CONFIG.ALLOW_GROUP_WIDGETS);
+
+    if (!chatId || !isAllowed) {
+      try {
+        await api.answerCallbackQuery({
+          callback_query_id: callbackQuery.id,
+          text: 'Please open the bot in a private chat and send /start first.',
+          show_alert: true,
+        });
+      } catch (err) {
+        console.warn('[callback-router] Failed to answer restricted callback:', err?.description ?? err.message);
+      }
+      return { handled: true, chatRestricted: true };
+    }
+
+    const def = getWidgetDefinition(type);
+    if (def) {
+      try {
+        await sendWidgetMessage(def, {
+          chatId,
+          chatType,
+          createdBy: callbackQuery.from?.id ?? null,
+        });
+      } catch (err) {
+        if (err instanceof BotApiError || err?.name === 'BotApiError') {
+          console.warn(`[callback-router] BotApiError ${err.code} in sendWidgetMessage: ${err.description || err.message}`);
+        } else {
+          console.error('[callback-router] sendWidgetMessage error:', err);
+        }
+      }
+    }
+
+    try {
+      await api.answerCallbackQuery({
+        callback_query_id: callbackQuery.id,
+        text: 'New widget created!',
+      });
+    } catch {}
+
+    return { handled: true, type };
   }
 
-  if (callbackQuery?.data?.startsWith('wg:')) {
+  if (data.startsWith('wg:')) {
     return await resolveAndDispatchWidgetQuery(
       {
         id: callbackQuery.id,
@@ -25,7 +77,7 @@ export async function routeCallbackQueryUpdate(callbackQuery, ctx) {
         chat: callbackQuery.message?.chat,
         message_id: callbackQuery.message?.message_id,
         inline_message_id: callbackQuery.inline_message_id,
-        data: callbackQuery.data.slice(3),
+        data: data.slice(3),
       },
       { isSharedCopy: false }
     );

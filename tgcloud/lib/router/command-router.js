@@ -1,15 +1,14 @@
-import { api } from 'sdk';
-import {
-  sendWidgetMessage,
-  sendSharedWidgetMessage,
-  getSharedWidgetById,
-} from '../widgets/index.js';
+import { api, BotApiError } from 'sdk';
+import { WIDGET_CONFIG } from '../widgets/config.js';
+import { sendWidgetMessage } from '../widgets/index.js';
 import {
   getWidgetByCommand,
   getWidgetDefinition,
   listWidgetDefinitions,
-  resolveAndDispatchWidgetQuery,
 } from '../widgets/registry/index.js';
+import { tryInterceptWidgetUpdate } from './widget-query-router.js';
+import { handleShareCommand } from '../commands/share.js';
+import { handleHtmlDocumentUpload } from '../commands/upload-widget.js';
 
 /**
  * Routes message updates and parses bot commands or widget queries.
@@ -19,13 +18,16 @@ import {
  * @returns {Promise<object>} Handled status and metadata
  */
 export async function routeMessageUpdate(message, ctx) {
-  // Check for direct widget queries passed on the update
-  if (ctx?.update?.widget_query) {
-    return await resolveAndDispatchWidgetQuery(ctx.update.widget_query, { isSharedCopy: false });
+  const intercepted = await tryInterceptWidgetUpdate(ctx);
+  if (intercepted.intercepted) {
+    return intercepted.result;
   }
 
-  if (ctx?.update?.shared_widget_query) {
-    return await resolveAndDispatchWidgetQuery(ctx.update.shared_widget_query, { isSharedCopy: true });
+  if (message?.document) {
+    const uploadRes = await handleHtmlDocumentUpload(message);
+    if (uploadRes?.handled) {
+      return uploadRes;
+    }
   }
 
   if (!message?.text || !message?.chat?.id) {
@@ -41,22 +43,56 @@ export async function routeMessageUpdate(message, ctx) {
   const [cmdPart] = firstToken.split('@');
   const command = cmdPart.toLowerCase();
 
-  // /start or /help: dynamic help message
+  // /start deep link
+  if (command === '/start' && argText) {
+    const targetType = argText.replace(/^launch_/i, '').trim().toLowerCase();
+    const def = getWidgetDefinition(targetType);
+    if (def) {
+      if (message.chat.type !== 'private' && !WIDGET_CONFIG.ALLOW_GROUP_WIDGETS) {
+        await api.sendMessage({
+          chat_id: message.chat.id,
+          text: 'Interactive widgets can only be launched in private chats. Please open a private chat with the bot and send /start.',
+        });
+        return { handled: true, chatRestricted: true };
+      }
+
+      try {
+        await sendWidgetMessage(def, {
+          chatId: message.chat.id,
+          chatType: message.chat.type,
+          params: {},
+          createdBy: message.from?.id ?? null,
+        });
+      } catch (err) {
+        if (err instanceof BotApiError || err?.name === 'BotApiError') {
+          console.warn(`[command-router] BotApiError ${err.code} sending deep-linked widget: ${err.description || err.message}`);
+        } else {
+          console.error('[command-router] Error sending deep-linked widget:', err);
+        }
+      }
+      return { handled: true, command: '/start', deepLink: targetType };
+    }
+  }
+
   if (command === '/start' || command === '/help') {
-    const defs = listWidgetDefinitions();
-    const widgetLines = defs
-      .map((d) => `${d.command || d.type} - ${d.title}: ${d.description}`)
-      .join('\n');
+    const commandLines = listWidgetDefinitions().map((def) => {
+      const cmd = def.command.startsWith('/') ? def.command : `/${def.command}`;
+      return `${cmd} - ${def.title}${def.description ? ' (' + def.description + ')' : ''}`;
+    });
+    commandLines.push('/share - Launch widgets menu');
+    commandLines.push('/help - Show this help message');
+
+    const uploadHint = message.chat.type === 'private'
+      ? '📄 Send any .html file in this chat to validate & launch it as a live widget!'
+      : '📄 Send any .html file in a private chat with the bot to validate & launch it as a live widget!';
 
     const text = [
-      'Telegram Serverless Widget Engine',
+      '⚡ Telegram Serverless Widget Engine',
       '',
       'Available commands:',
-      '/start or /help - Show this help message',
-      '/share <widget_id> - Share an existing widget by its ID',
+      ...commandLines,
       '',
-      'Widgets:',
-      widgetLines,
+      uploadHint,
     ].join('\n');
 
     await api.sendMessage({
@@ -66,51 +102,37 @@ export async function routeMessageUpdate(message, ctx) {
     return { handled: true, command };
   }
 
-  // /share <widget_id>: send shared widget copy
-  if (command === '/share') {
-    const widgetId = argText ? argText.trim().split(/\s+/)[0] : '';
-    if (!widgetId) {
-      await api.sendMessage({
-        chat_id: message.chat.id,
-        text: 'Usage: /share <widget_id>',
-      });
-      return { handled: true, command: '/share', error: 'MISSING_WIDGET_ID' };
-    }
-
-    const row = await getSharedWidgetById(widgetId);
-    if (!row) {
-      await api.sendMessage({
-        chat_id: message.chat.id,
-        text: `Shared widget "${widgetId}" not found.`,
-      });
-      return { handled: true, command: '/share', error: 'NOT_FOUND' };
-    }
-
-    const def = getWidgetDefinition(row.type);
-    if (!def) {
-      await api.sendMessage({
-        chat_id: message.chat.id,
-        text: `Widget definition for "${row.type}" not found.`,
-      });
-      return { handled: true, command: '/share', error: 'UNKNOWN_TYPE' };
-    }
-
-    await sendSharedWidgetMessage(def, {
-      chatId: message.chat.id,
-      widgetId: row.widgetId,
-    });
-    return { handled: true, command: '/share', widgetId: row.widgetId, type: def.type };
+  // /share or /share_<index>
+  if (command === '/share' || command.startsWith('/share_')) {
+    return await handleShareCommand(message, argText);
   }
 
-  // Registered widget command (/poll, /duel, etc.)
+  // Registered widget command (/timer, /poll, /duel, etc.)
   const def = getWidgetByCommand(command);
   if (def) {
+    if (message.chat.type !== 'private' && !WIDGET_CONFIG.ALLOW_GROUP_WIDGETS) {
+      await api.sendMessage({
+        chat_id: message.chat.id,
+        text: 'Interactive widgets can only be launched in private chats. Please open a private chat with the bot and send /start.',
+      });
+      return { handled: true, chatRestricted: true };
+    }
+
     const params = typeof def.parseParams === 'function' ? def.parseParams(argText) : {};
-    await sendWidgetMessage(def, {
-      chatId: message.chat.id,
-      params,
-      createdBy: message.from?.id ?? null,
-    });
+    try {
+      await sendWidgetMessage(def, {
+        chatId: message.chat.id,
+        chatType: message.chat.type,
+        params,
+        createdBy: message.from?.id ?? null,
+      });
+    } catch (err) {
+      if (err instanceof BotApiError || err?.name === 'BotApiError') {
+        console.warn(`[command-router] BotApiError ${err.code} sending widget: ${err.description || err.message}`);
+      } else {
+        console.error('[command-router] Error sending widget:', err);
+      }
+    }
     return { handled: true, type: def.type };
   }
 

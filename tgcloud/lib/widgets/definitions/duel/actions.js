@@ -1,3 +1,4 @@
+import { BotApiError } from 'sdk';
 import {
   getWidgetInstanceByMessage,
   updateWidgetInstanceRecord,
@@ -16,11 +17,15 @@ import { applyDuelMove, createInitialChatData } from './state.js';
  */
 export async function onWidgetQuery({ query, action, instance }) {
   if (!instance) {
-    const chatId = query?.chat?.id;
-    const messageId = query?.message_id;
-    const inlineMessageId = query?.inline_message_id;
+    const chatId = query?.chat?.id ?? query?.message?.chat?.id ?? null;
+    const messageId = query?.message_id ?? query?.message?.message_id ?? null;
+    const inlineMessageId = query?.inline_message_id ?? null;
     if (inlineMessageId || (chatId != null && messageId != null)) {
-      instance = await getWidgetInstanceByMessage({ chatId, messageId, inlineMessageId });
+      try {
+        instance = await getWidgetInstanceByMessage({ chatId, messageId, inlineMessageId });
+      } catch (err) {
+        console.warn('[DuelActions] getWidgetInstanceByMessage warning:', err);
+      }
     }
   }
 
@@ -44,25 +49,37 @@ export async function onWidgetQuery({ query, action, instance }) {
   if (result.changed) {
     const { chatData, publicData } = result;
 
-    if (instance?.id) {
-      await updateWidgetInstanceRecord(instance.id, {
-        chatData,
-        publicData,
-        revision: nextRevision,
-      });
-    }
-
-    const chatId = query?.chat?.id ?? instance?.chatId;
-    const messageId = query?.message_id ?? instance?.messageId;
+    const chatId = query?.chat?.id ?? query?.message?.chat?.id ?? instance?.chatId;
+    const messageId = query?.message_id ?? query?.message?.message_id ?? instance?.messageId;
     const inlineMessageId = query?.inline_message_id ?? instance?.inlineMessageId;
 
-    await updateMessageWidgetState({
-      chatId,
-      messageId,
-      inlineMessageId,
-      chatData,
-      publicData,
-    });
+    try {
+      await updateMessageWidgetState({
+        chatId,
+        messageId,
+        inlineMessageId,
+        chatData,
+        publicData,
+      });
+    } catch (err) {
+      const isBotApi = err instanceof BotApiError || err?.name === 'BotApiError' || err?.code !== undefined;
+      if (!(isBotApi && (err.code === 429 || err.code === 400))) {
+        console.warn('[DuelActions] updateMessageWidgetState warning:', err);
+      }
+      throw err;
+    }
+
+    if (instance?.id) {
+      try {
+        await updateWidgetInstanceRecord(instance.id, {
+          chatData,
+          publicData,
+          revision: nextRevision,
+        });
+      } catch (dbErr) {
+        console.warn('[DuelActions] updateWidgetInstanceRecord warning:', dbErr);
+      }
+    }
 
     return chatData;
   }

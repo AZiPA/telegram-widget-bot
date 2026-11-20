@@ -37,7 +37,7 @@ jobs:
       - name: Install dependencies
         run: npm install --no-audit --no-fund
 
-      - name: Validate Widget HTML Profile 1 Size Budgets (<= 32KB raw, <= 3800B zlib-9)
+      - name: Validate Widget HTML Profile 1 Size Budgets (<= 32KB raw, <= 4096B zlib-9)
         run: node scripts/validate-widgets.js
 
       - name: Check Telegram Serverless Status

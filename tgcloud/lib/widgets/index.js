@@ -1,3 +1,5 @@
+export { WIDGET_CONFIG } from './config.js';
+
 export {
   utf8ByteLength,
   assertValidWidgetHtml,
@@ -7,13 +9,24 @@ export {
 } from './core/validators.js';
 
 export {
+  extractWidgetMetaComment,
+  stripOptionalDocumentShell,
+  estimateCompressedSize,
+  inspectCustomWidgetHtml,
+} from './core/html-inspector.js';
+
+export {
   upsertSharedWidget,
   getSharedWidgetById,
+  getLatestSharedWidgetByType,
+  clearSharedWidgets,
+  deleteSharedWidgetsByType,
   listRecentSharedWidgets,
   updateSharedWidgetRecord,
   insertWidgetInstance,
   getWidgetInstanceByMessage,
   updateWidgetInstanceRecord,
+  pruneExpiredWidgetInstances,
 } from './core/repository.js';
 
 export {
@@ -30,6 +43,8 @@ export {
   safeAnswerWidgetQuery,
 } from './core/query-responder.js';
 
+import { WIDGET_CONFIG } from './config.js';
+
 import {
   utf8ByteLength,
   assertValidWidgetHtml,
@@ -41,11 +56,15 @@ import {
 import {
   upsertSharedWidget,
   getSharedWidgetById,
+  getLatestSharedWidgetByType,
+  clearSharedWidgets,
+  deleteSharedWidgetsByType,
   listRecentSharedWidgets,
   updateSharedWidgetRecord,
   insertWidgetInstance,
   getWidgetInstanceByMessage,
   updateWidgetInstanceRecord,
+  pruneExpiredWidgetInstances,
 } from './core/repository.js';
 
 import {
@@ -63,6 +82,7 @@ import {
 } from './core/query-responder.js';
 
 export default {
+  WIDGET_CONFIG,
   utf8ByteLength,
   assertValidWidgetHtml,
   serializeStateData,
@@ -70,11 +90,15 @@ export default {
   parseQueryData,
   upsertSharedWidget,
   getSharedWidgetById,
+  getLatestSharedWidgetByType,
+  clearSharedWidgets,
+  deleteSharedWidgetsByType,
   listRecentSharedWidgets,
   updateSharedWidgetRecord,
   insertWidgetInstance,
   getWidgetInstanceByMessage,
   updateWidgetInstanceRecord,
+  pruneExpiredWidgetInstances,
   sendWidgetMessage,
   sendSharedWidgetMessage,
   updateMessageWidgetState,
